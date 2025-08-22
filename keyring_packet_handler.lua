@@ -770,7 +770,14 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                     local notification_items = {3212, 3300, 3137}  -- Moglophone, Shiny Rakaznarian plate, Mystical Canteen
                     for _, notification_id in ipairs(notification_items) do
                         if ki == notification_id then
-                            print(chat.header('Keyring'):append(chat.message(string.format('Acquired %s - cooldown started', item_name))))
+                            -- Customize message based on item type
+                            if ki == 3300 then
+                                -- Shiny Ra'Kaznarian Plate - no cooldown on acquisition
+                                print(chat.header('Keyring'):append(chat.message(string.format('Acquired %s - cooldown starts when used for teleport', item_name))))
+                            else
+                                -- Moglophone and Mystical Canteen - cooldown starts on acquisition
+                                print(chat.header('Keyring'):append(chat.message(string.format('Acquired %s - cooldown started', item_name))))
+                            end
                             break
                         end
                     end

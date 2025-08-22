@@ -259,6 +259,12 @@ The addon has been optimized for performance and maintainability:
 
 ## Version History
 
+- **v0.3.9**: Fixed Shiny Ra'Kaznarian Plate acquisition message
+  - **Corrected acquisition notification**: Changed "Acquired Shiny Ra'Kaznarian Plate - cooldown started" to "Acquired Shiny Ra'Kaznarian Plate - cooldown starts when used for teleport"
+  - **Accurate item behavior**: Now correctly reflects that the plate doesn't start a cooldown when acquired, only when used for teleportation
+  - **Smart messaging**: Different messages for items that start cooldowns on acquisition (Moglophone, Canteen) vs. items that don't (Shiny Plate)
+  - **Better user understanding**: No more confusion about when cooldowns actually start
+
 - **v0.3.8**: Improved naming consistency and message accuracy
   - **Standardized item names**: Updated all references to use consistent "Shiny Ra'Kaznarian Plate" naming
   - **Fixed acquisition message**: Changed "Shiny Rakaznarian Plate used - 20-hour cooldown started" to "Shiny Ra'Kaznarian Plate acquired - cooldown starts when used for teleport"

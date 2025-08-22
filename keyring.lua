@@ -1,6 +1,6 @@
 addon.author   = 'Avogadro, assistance from Thorny and Will'
 addon.name     = 'Keyring'
-addon.version  = '0.3.8'
+addon.version  = '0.3.9'
 
 require('common')
 local chat = require('chat')
@@ -141,7 +141,7 @@ ashita.events.register('command', 'command_cb', function(e)
 
     -- Help command
     if args[2] == 'help' then
-        print(chat.header('Keyring'):append(chat.message('Keyring Addon v0.3.8 - Key Item Cooldown Tracker')))
+        print(chat.header('Keyring'):append(chat.message('Keyring Addon v0.3.9 - Key Item Cooldown Tracker')))
         print(chat.message(''))
         print(chat.message('== TRACKED KEY ITEMS =='))
         print(chat.message('  • Moglophone (20h cooldown) - Acquired when obtained'))
@@ -514,7 +514,7 @@ end)
 
 -- Load event
 ashita.events.register('load', 'load_cb', function()
-    print(chat.header('Keyring'):append(chat.message('Keyring v0.3.8 loaded. Key item state will be initialized when ready.')))
+    print(chat.header('Keyring'):append(chat.message('Keyring v0.3.9 loaded. Key item state will be initialized when ready.')))
 end)
 
 -- Main render loop
