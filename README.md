@@ -259,6 +259,12 @@ The addon has been optimized for performance and maintainability:
 
 ## Version History
 
+- **v0.4.1**: Fixed false acquisition messages when items are lost
+  - **Corrected notification logic**: Acquisition messages now only show when items are actually gained (ownership changes from "Don't Have" to "Have")
+  - **Eliminated false positives**: No more "Acquired [Item]" messages when items are being lost or consumed
+  - **Better user experience**: Notifications now accurately reflect actual item acquisition events
+  - **Fixed Mystical Canteen bug**: Resolved issue where losing a canteen would show acquisition message
+
 - **v0.4.0**: Restructured 0x02A packet handler with zone-based separation
   - **Zone-based processing**: 0x02A packets now only process Hourglass data in pre-Dynamis zones (Southern San Doria, Bastok Mines, Windurst Walls, Ru'Lude Gardens)
   - **Eliminated unnecessary processing**: Ruspix Plate data only processed in Outer Ra'Kaznar zones (U1, U2, U3)
