@@ -2,7 +2,7 @@
 
 A Final Fantasy XI addon for Ashita4 that tracks key items with cooldown timers, providing real-time status updates and individual item notifications.
 
-**Current Version: v0.4.1** - Latest features include zone-based packet processing, enhanced safety checks, and accurate acquisition messaging.
+**Current Version: v0.4.2** - Latest features include zone-based packet processing, enhanced safety checks, accurate acquisition messaging, and improved Ruspix Plate status display.
 
 ## Features
 
@@ -261,6 +261,12 @@ The addon has been optimized for performance and maintainability:
 - **Clean Code**: Removed outdated debug commands and streamlined functionality
 
 ## Version History
+
+- **v0.4.2**: Improved Ruspix Plate status display with "Unknown" state
+  - **Enhanced status logic**: Ruspix Plate now shows "Unknown" when no valid packet data has been received yet
+  - **Better user clarity**: Distinguishes between "no data received" vs "data received but time is 0"
+  - **Improved time display**: Shows "0h:00m:00s" when packet data exists but time value is 0
+  - **More accurate status**: Status now reflects whether the addon has ever received valid Ruspix Plate data
 
 - **v0.4.1**: Fixed false acquisition messages when items are lost
   - **Corrected notification logic**: Acquisition messages now only show when items are actually gained (ownership changes from "Don't Have" to "Have")

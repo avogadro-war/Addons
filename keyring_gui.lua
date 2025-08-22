@@ -662,10 +662,23 @@ local function render_ruspix_plate_section(packet_tracker, total_width)
                -- Debug output removed to prevent spam
     
     -- Status display - centered across entire window
-    if ruspix_time == 0 or ruspix_time == nil then
-        -- No Ruspix Plate time recorded
+    -- Check if we've ever received valid packet data for Ruspix Plate
+    local has_received_packet_data = packet_ruspix_time > 0 or (packet_tracker and packet_tracker.get_ruspix_last_save_timestamp and packet_tracker.get_ruspix_last_save_timestamp() > 0)
+    
+    if not has_received_packet_data then
+        -- No valid packet data received yet - show "Unknown"
         local display_text = 'Unknown'
         local text_color = {0.6, 0.6, 0.6, 1} -- Softer gray
+        
+        -- Center the status text across the entire window
+        local text_width = imgui.CalcTextSize(display_text)
+        local pos_x = (total_width - text_width) / 2
+        imgui.SetCursorPosX(pos_x)
+        imgui.TextColored(text_color, display_text)
+    elseif ruspix_time == 0 or ruspix_time == nil then
+        -- Packet data received but time is 0 - show "Ready" (since 0 means no cooldown)
+        local display_text = 'Ready'
+        local text_color = {0.2, 1, 0.2, 1} -- Green
         
         -- Center the status text across the entire window
         local text_width = imgui.CalcTextSize(display_text)
@@ -700,9 +713,25 @@ local function render_ruspix_plate_section(packet_tracker, total_width)
     imgui.NextColumn()
     
     -- Time display (right column) - right justified
-    if ruspix_time == 0 or ruspix_time == nil then
-        -- No Ruspix Plate time recorded - no time to display
+    if not has_received_packet_data then
+        -- No valid packet data received yet - show "Unknown"
         imgui.Text('')
+    elseif ruspix_time == 0 or ruspix_time == nil then
+        -- Packet data received but time is 0 - show "0h:00m:00s"
+        local timeText = '0h:00m:00s'
+        
+        -- Add spacing to match vertical alignment first
+        imgui.Spacing()
+        imgui.Spacing()
+        
+        -- Right justify the time text
+        local col_start = imgui.GetColumnOffset()
+        local col_width = imgui.GetColumnWidth()
+        local text_width = imgui.CalcTextSize(timeText)
+        local pos_x = col_start + col_width - text_width
+        imgui.SetCursorPosX(pos_x)
+        
+        imgui.TextColored({1, 1, 1, 1}, timeText)  -- White text
     else
         -- Helper function to format seconds as hh"h":mm"m":ss"s"
         local function format_time_readable(seconds)
