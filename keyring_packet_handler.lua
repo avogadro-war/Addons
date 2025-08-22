@@ -1030,99 +1030,119 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
         end
         
     elseif e.id == 0x02A then
-        -- Hourglass usage detection with accrual logic
-        local messageId = struct.unpack('H', e.data, 0x1A+1)
-        local actor_ID = struct.unpack('I', e.data, 0x04+1)
-        local byte1 = e.data:byte(0x0C+1)
-        local byte2 = e.data:byte(0x0D+1)
-        local byte3 = e.data:byte(0x0E+1)
-        local hourglass_time = byte1 + (byte2 * 256) + (byte3 * 65536)
+        -- 0x02A packet handler with zone-based separation
+        -- This packet contains both Hourglass and Ruspix Plate data, separated by zone context
         
-        local hourglass_validation = {
-            [17772867] = 48733,
-            [17720029] = 49344,
-            [17756500] = 43686,
-            [17736063] = 49463
-        }
+        -- Define zone groups for processing logic
+        local pre_dynamis_zones = {230, 234, 239, 243}  -- Southern San Doria, Bastok Mines, Windurst Walls, Ru'Lude Gardens
+        local outer_rakaznar_zones = {275, 133, 189}    -- Outer Ra'Kaznar [U1], [U2], [U3]
         
-        local expected_message_id = hourglass_validation[actor_ID]
-        if expected_message_id and messageId == expected_message_id then
-            local current_state = get_state()
-            local now = os.time()
-            
-            -- Get the current base hourglass time (without accrual)
-            local current_base = current_state.hourglass_time or 0
-            
-            -- Always update with the new packet value if it's different
-            -- This ensures we get the latest hourglass time from the server
-            if hourglass_time ~= current_base then
-                -- Cap hourglass time at 60 hours (216000 seconds)
-                local max_hourglass_time = 216000
-                local capped_hourglass_time = math.min(hourglass_time, max_hourglass_time)
-                
-                -- Store the new hourglass time value as the base hourglass time
-                current_state.hourglass_time = capped_hourglass_time
-                current_state.hourglass_packet_timestamp = now  -- Store timestamp when packet was received
-                
-                -- Reset accumulated time since the new packet value includes any accumulated time
-                current_state.hourglass_accumulated_time = 0
-                current_state.hourglass_last_save_timestamp = now
-                
-                if hourglass_time > max_hourglass_time then
-                    print(chat.header('Keyring'):append(chat.message('Empty Hourglass time capped at 60 hours: ' .. capped_hourglass_time .. ' seconds')))
-                else
-                    print(chat.header('Keyring'):append(chat.message('Empty Hourglass time updated: ' .. capped_hourglass_time .. ' seconds')))
-                end
-            else
-                -- Time matches current base - no update needed
+        local is_in_pre_dynamis = false
+        local is_in_outer_rakaznar = false
+        
+        -- Check current zone for processing logic
+        for _, zone_id in ipairs(pre_dynamis_zones) do
+            if current_zone == zone_id then
+                is_in_pre_dynamis = true
+                break
             end
-            
-            -- Empty Hourglass time is tracked but not actively consumed here
-            -- Consumption happens automatically when entering Dynamis while on cooldown
-            
-            save_state()
         end
         
-        -- Ruspix Plate time extraction from 0x02A packet
-        if #e.data >= 0x1C then  -- Need at least 28 bytes for offset 0x18-0x1B
+        for _, zone_id in ipairs(outer_rakaznar_zones) do
+            if current_zone == zone_id then
+                is_in_outer_rakaznar = true
+                break
+            end
+        end
+        
+        -- Process Hourglass data only in pre-Dynamis zones
+        if is_in_pre_dynamis then
+            local messageId = struct.unpack('H', e.data, 0x1A+1)
+            local actor_ID = struct.unpack('I', e.data, 0x04+1)
+            local byte1 = e.data:byte(0x0C+1)
+            local byte2 = e.data:byte(0x0D+1)
+            local byte3 = e.data:byte(0x0E+1)
+            local hourglass_time = byte1 + (byte2 * 256) + (byte3 * 65536)
+            
+            local hourglass_validation = {
+                [17772867] = 48733,
+                [17720029] = 49344,
+                [17756500] = 43686,
+                [17736063] = 49463
+            }
+            
+            local expected_message_id = hourglass_validation[actor_ID]
+            if expected_message_id and messageId == expected_message_id then
+                local current_state = get_state()
+                local now = os.time()
+                
+                -- Get the current base hourglass time (without accrual)
+                local current_base = current_state.hourglass_time or 0
+                
+                -- Always update with the new packet value if it's different
+                -- This ensures we get the latest hourglass time from the server
+                if hourglass_time ~= current_base then
+                    -- Cap hourglass time at 60 hours (216000 seconds)
+                    local max_hourglass_time = 216000
+                    local capped_hourglass_time = math.min(hourglass_time, max_hourglass_time)
+                    
+                    -- Store the new hourglass time value as the base hourglass time
+                    current_state.hourglass_time = capped_hourglass_time
+                    current_state.hourglass_packet_timestamp = now  -- Store timestamp when packet was received
+                    
+                    -- Reset accumulated time since the new packet value includes any accumulated time
+                    current_state.hourglass_accumulated_time = 0
+                    current_state.hourglass_last_save_timestamp = now
+                    
+                    if hourglass_time > max_hourglass_time then
+                        print(chat.header('Keyring'):append(chat.message('Empty Hourglass time capped at 60 hours: ' .. capped_hourglass_time .. ' seconds')))
+                    else
+                        print(chat.header('Keyring'):append(chat.message('Empty Hourglass time updated: ' .. capped_hourglass_time .. ' seconds')))
+                    end
+                    
+                    -- Save state after hourglass update
+                    save_state()
+                end
+                
+                debug_print('0x02A: Hourglass time processed in pre-Dynamis zone ' .. current_zone)
+            end
+        end
+        
+        -- Process Ruspix Plate data only in Outer Ra'Kaznar zones
+        if is_in_outer_rakaznar and #e.data >= 0x1C then  -- Need at least 28 bytes for offset 0x18-0x1B
             local ruspix_time = struct.unpack('I', e.data, 0x18+1)  -- 32-bit at offset 0x18-0x1B
             
-            -- Only update if we're in an Outer Rakaznar zone
-            local outer_rakaznar_zones = {275, 133, 189}  -- Outer Ra'Kaznar [U1], [U2], [U3]
-            local is_in_outer_rakaznar = false
+            local current_state = get_state()
             
-            for _, zone_id in ipairs(outer_rakaznar_zones) do
-                if current_zone == zone_id then
-                    is_in_outer_rakaznar = true
-                    break
-                end
+            -- Cap Ruspix Plate time at 20 hours (72000 seconds)
+            local max_ruspix_time = 72000
+            local capped_ruspix_time = math.min(ruspix_time, max_ruspix_time)
+            
+            -- Update the packet time (same variable used by 0x05C)
+            current_state.packet_ruspix_time = capped_ruspix_time
+            current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
+            current_state.ruspix_last_save_timestamp = os.time()  -- Update timestamp for accrual tracking
+            
+            if ruspix_time > max_ruspix_time then
+                debug_print('0x02A: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. ruspix_time .. ' seconds), accrual reset to 0')
+            else
+                debug_print('0x02A: Ruspix Plate time updated from packet: ' .. capped_ruspix_time .. ' seconds, accrual reset to 0')
             end
             
-            if is_in_outer_rakaznar then
-                local current_state = get_state()
-                
-                -- Cap Ruspix Plate time at 20 hours (72000 seconds)
-                local max_ruspix_time = 72000
-                local capped_ruspix_time = math.min(ruspix_time, max_ruspix_time)
-                
-                -- Update the packet time (same variable used by 0x05C)
-                current_state.packet_ruspix_time = capped_ruspix_time
-                current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
-                current_state.ruspix_last_save_timestamp = os.time()  -- Update timestamp for accrual tracking
-                
-                if ruspix_time > max_ruspix_time then
-                    debug_print('0x02A: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. ruspix_time .. ' seconds), accrual reset to 0')
-                else
-                    debug_print('0x02A: Ruspix Plate time updated from packet: ' .. capped_ruspix_time .. ' seconds, accrual reset to 0')
-                end
-                
-                save_state()
-                
-                -- Trigger GUI update callback to refresh display
-                if gui_update_callback then
-                    pcall(gui_update_callback)
-                end
+            -- Save state after Ruspix Plate update
+            save_state()
+            
+            -- Trigger GUI update callback to refresh display
+            if gui_update_callback then
+                pcall(gui_update_callback)
             end
+            
+            debug_print('0x02A: Ruspix Plate time processed in Outer Ra\'Kaznar zone ' .. current_zone)
+        end
+        
+        -- Debug output for zones where neither processing applies
+        if not is_in_pre_dynamis and not is_in_outer_rakaznar then
+            debug_print('0x02A: Packet received in zone ' .. current_zone .. ' - no processing needed for this zone')
         end
         
     elseif e.id == 0x118 then

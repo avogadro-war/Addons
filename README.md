@@ -259,6 +259,13 @@ The addon has been optimized for performance and maintainability:
 
 ## Version History
 
+- **v0.4.0**: Restructured 0x02A packet handler with zone-based separation
+  - **Zone-based processing**: 0x02A packets now only process Hourglass data in pre-Dynamis zones (Southern San Doria, Bastok Mines, Windurst Walls, Ru'Lude Gardens)
+  - **Eliminated unnecessary processing**: Ruspix Plate data only processed in Outer Ra'Kaznar zones (U1, U2, U3)
+  - **Improved efficiency**: No more processing irrelevant data based on location
+  - **Better structure**: Clear separation of concerns with zone validation before processing
+  - **Enhanced debugging**: Added zone-specific debug messages for better troubleshooting
+
 - **v0.3.9**: Fixed Shiny Ra'Kaznarian Plate acquisition message
   - **Corrected acquisition notification**: Changed "Acquired Shiny Ra'Kaznarian Plate - cooldown started" to "Acquired Shiny Ra'Kaznarian Plate - cooldown starts when used for teleport"
   - **Accurate item behavior**: Now correctly reflects that the plate doesn't start a cooldown when acquired, only when used for teleportation
