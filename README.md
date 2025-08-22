@@ -24,7 +24,7 @@ The addon currently tracks these items with their respective cooldowns:
 ### Key Items with Cooldowns
 - **Moglophone** (20h cooldown) - Cooldown starts when acquired
 - **Mystical Canteen** (20h generation cycle) - Storage-based tracking (up to 3 canteens)
-- **Shiny Rakaznar Plate** (20h cooldown) - Cooldown starts when used for teleport
+- **Shiny Ra'Kaznarian Plate** (20h cooldown) - Cooldown starts when used for teleport
 
 ### Special Cooldowns
 - **Dynamis [D] Entry** (60h cooldown) - Auto-detected when entering Dynamis [D] zones:
@@ -146,13 +146,13 @@ The addon provides specific, individual notifications for the three primary key 
 #### Acquisition Notifications (Always On)
 - "Moglophone acquired - 20-hour cooldown started"
 - "Acquired Mystical Canteen - cooldown started"
-- "Shiny Rakaznar Plate used - 20-hour cooldown started"
+- "Shiny Rakaznarian Plate acquired - cooldown starts when used for teleport"
 
 #### Zone Change Notifications (Toggleable)
 When you zone into a new area, individual "ready for pickup" alerts for the three notification items:
 - "Moglophone is ready for pickup"
 - "Mystical Canteen is ready for pickup"
-- "Shiny Rakaznar Plate is ready for pickup"
+- "Shiny Ra'Kaznarian Plate is ready for pickup"
 
 **Note**: Other tracked items (Ambuscade Primers, Dynamis [D] status, etc.) are displayed in the GUI but do not generate chat notifications.
 
@@ -259,6 +259,12 @@ The addon has been optimized for performance and maintainability:
 
 ## Version History
 
+- **v0.3.8**: Improved naming consistency and message accuracy
+  - **Standardized item names**: Updated all references to use consistent "Shiny Ra'Kaznarian Plate" naming
+  - **Fixed acquisition message**: Changed "Shiny Rakaznarian Plate used - 20-hour cooldown started" to "Shiny Ra'Kaznarian Plate acquired - cooldown starts when used for teleport"
+  - **Better user clarity**: Help text and documentation now accurately reflect that the plate cooldown starts on teleport usage, not acquisition
+  - **Consistent terminology**: Unified naming across help menu, commands, and documentation
+
 - **v0.3.7**: Enhanced Ruspix Plate safety checks
   - **Prevented false timestamps**: Added safety check to prevent 0x05C packets from setting timestamps when Shiny Rakaznarian Plate cooldown is 0 or nil
   - **Better error handling**: Improved debug messages for edge cases
@@ -315,15 +321,15 @@ The addon has been optimized for performance and maintainability:
   - **Flexible item name matching**: Fix command accepts partial names (e.g., "mog", "canteen", "plate")
   - **Enhanced command documentation**: Updated README and help with detailed examples and usage instructions
 
-- **v0.3.0**: Enhanced Shiny Rakaznar Plate tracking and improved detection systems
-  - **Fixed Shiny Rakaznar Plate cooldown logic**: Cooldown now starts when the plate is used/lost, not when acquired
-  - **Dual detection system**: Both zone transition detection (0x0A packets) and key item loss detection (0x55 packets) for Shiny Rakaznar Plate
+- **v0.3.0**: Enhanced Shiny Ra'Kaznarian Plate tracking and improved detection systems
+  - **Fixed Shiny Ra'Kaznarian Plate cooldown logic**: Cooldown now starts when the plate is used/lost, not when acquired
+  - **Dual detection system**: Both zone transition detection (0x0A packets) and key item loss detection (0x55 packets) for Shiny Ra'Kaznarian Plate
   - **Improved zone transition detection**: More reliable detection of Ra'Kaznar zone transitions from Kamihr Drifts to Outer Ra'Kaznar zones
   - **Enhanced packet handling**: Better handling of key item acquisition and loss events
   - **Redundant safety systems**: Multiple detection methods ensure accurate cooldown tracking even if one method fails
   - **Updated persistence system**: Improved state management for accurate timestamp tracking
   - **Character-specific persistence**: Each character now has their own settings file, preventing data conflicts between characters
-  - **Better user feedback**: Clear messages when Shiny Rakaznar Plate is acquired, used, or lost
+  - **Better user feedback**: Clear messages when Shiny Ra'Kaznarian Plate is acquired, used, or lost
   - **Dynamis [D] tracking system**: Automatic detection of Dynamis [D] zone entries with 60-hour cooldown tracking
   - **Zone transition monitoring**: Monitors transitions from pre-Dynamis zones to Dynamis [D] zones for accurate entry detection
 

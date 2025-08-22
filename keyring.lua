@@ -1,6 +1,6 @@
 addon.author   = 'Avogadro, assistance from Thorny and Will'
 addon.name     = 'Keyring'
-addon.version  = '0.3.7'
+addon.version  = '0.3.8'
 
 require('common')
 local chat = require('chat')
@@ -141,18 +141,18 @@ ashita.events.register('command', 'command_cb', function(e)
 
     -- Help command
     if args[2] == 'help' then
-        print(chat.header('Keyring'):append(chat.message('Keyring Addon v0.3.7 - Key Item Cooldown Tracker')))
+        print(chat.header('Keyring'):append(chat.message('Keyring Addon v0.3.8 - Key Item Cooldown Tracker')))
         print(chat.message(''))
         print(chat.message('== TRACKED KEY ITEMS =='))
         print(chat.message('  • Moglophone (20h cooldown) - Acquired when obtained'))
         print(chat.message('  • Mystical Canteen (20h generation cycle) - Storage-based tracking'))
-        print(chat.message('  • Shiny Rakaznar Plate (20h cooldown) - Starts when used for teleport'))
+        print(chat.message('  • Shiny Ra\'Kaznarian Plate (20h cooldown) - Cooldown starts when used for teleport'))
         print(chat.message('  • Dynamis [D] Entry (60h cooldown) - Auto-detected on zone entry'))
         print(chat.message('  • Empty Hourglass - Time value tracked via NPC interactions'))
         print(chat.message('  • Other key items - Ownership tracking (no cooldowns)'))
         print(chat.message(''))
         print(chat.message('== NOTIFICATION ITEMS =='))
-        print(chat.message('  • Notifications are limited to: Moglophone, Shiny Rakaznarian plate, and Mystical Canteen'))
+        print(chat.message('  • Notifications are limited to: Moglophone, Shiny Ra\'Kaznarian Plate, and Mystical Canteen'))
         print(chat.message('  • Other tracked items are displayed in GUI but do not generate notifications'))
         print(chat.message(''))
         print(chat.message('== BASIC COMMANDS =='))
@@ -177,7 +177,7 @@ ashita.events.register('command', 'command_cb', function(e)
         print(chat.message('  /keyring debug_item <item> - Debug specific item state'))
         print(chat.message(''))
         print(chat.message('== NOTIFICATIONS =='))
-        print(chat.message('  • Individual item acquisition alerts for: Moglophone, Shiny Rakaznarian plate, Mystical Canteen'))
+        print(chat.message('  • Individual item acquisition alerts for: Moglophone, Shiny Ra\'Kaznarian Plate, Mystical Canteen'))
         print(chat.message('  • Individual "ready for pickup" alerts on zone change for the same three items'))
         print(chat.message('  • Toggle zone notifications with /keyring notify'))
         print(chat.message(''))
@@ -266,7 +266,7 @@ ashita.events.register('command', 'command_cb', function(e)
     if args[2] == 'fix' then
         if not args[3] or args[3] == '' then
             print(chat.header('Keyring'):append(chat.message('Usage: /keyring fix <item>')))
-            print(chat.message('Available items: Moglophone, Mystical Canteen, Shiny Rakaznar Plate'))
+            print(chat.message('Available items: Moglophone, Mystical Canteen, Shiny Ra\'Kaznarian Plate'))
             return true
         end
         
@@ -285,7 +285,7 @@ ashita.events.register('command', 'command_cb', function(e)
         
         if not itemId then
             print(chat.header('Keyring'):append(chat.message('Unknown item: ' .. args[3])))
-            print(chat.message('Available items: Moglophone, Mystical Canteen, Shiny Rakaznar Plate'))
+            print(chat.message('Available items: Moglophone, Mystical Canteen, Shiny Ra\'Kaznarian Plate'))
             return true
         end
         
@@ -514,7 +514,7 @@ end)
 
 -- Load event
 ashita.events.register('load', 'load_cb', function()
-    print(chat.header('Keyring'):append(chat.message('Keyring v0.3.7 loaded. Key item state will be initialized when ready.')))
+    print(chat.header('Keyring'):append(chat.message('Keyring v0.3.8 loaded. Key item state will be initialized when ready.')))
 end)
 
 -- Main render loop
