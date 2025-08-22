@@ -259,6 +259,12 @@ The addon has been optimized for performance and maintainability:
 
 ## Version History
 
+- **v0.3.7**: Enhanced Ruspix Plate safety checks
+  - **Prevented false timestamps**: Added safety check to prevent 0x05C packets from setting timestamps when Shiny Rakaznarian Plate cooldown is 0 or nil
+  - **Better error handling**: Improved debug messages for edge cases
+  - **Enhanced stability**: Prevents potential false cooldown starts when plate isn't on cooldown
+  - **Smart packet processing**: Only processes Ruspix Plate packets when there's a valid cooldown to work with
+
 - **v0.3.6**: Removed non-functional backup system
   - **Cleaned up help menu**: Removed backup commands that were never implemented
   - **Removed backup handlers**: Eliminated command handlers for non-existent backup functions

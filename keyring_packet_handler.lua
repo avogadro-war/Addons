@@ -853,17 +853,36 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
         
         -- Get Shiny Rakaznarian Plate remaining cooldown
         local shiny_plate_remaining = 0
+        local has_valid_cooldown = false
+        
         if trackedKeyItems and trackedKeyItems[3300] then
             local shiny_plate_timestamp = current_state.timestamps and current_state.timestamps[3300] or 0
             local shiny_plate_cooldown = trackedKeyItems[3300].cooldown or 72000
             local now = os.time()
             
-            if shiny_plate_timestamp > 0 then
-                local time_since_acquisition = now - shiny_plate_timestamp
-                if time_since_acquisition < shiny_plate_cooldown then
-                    shiny_plate_remaining = shiny_plate_cooldown - time_since_acquisition
+            -- Safety check: Only process if there's actually a valid cooldown
+            if shiny_plate_cooldown and shiny_plate_cooldown > 0 then
+                has_valid_cooldown = true
+                
+                if shiny_plate_timestamp > 0 then
+                    local time_since_acquisition = now - shiny_plate_timestamp
+                    if time_since_acquisition < shiny_plate_cooldown then
+                        shiny_plate_remaining = shiny_plate_cooldown - time_since_acquisition
+                    end
                 end
+            else
+                debug_print('0x05C: Shiny Rakaznarian Plate cooldown is 0 or nil, skipping timestamp update')
+                return
             end
+        else
+            debug_print('0x05C: Shiny Rakaznarian Plate not tracked, skipping timestamp update')
+            return
+        end
+        
+        -- Only proceed if we have a valid cooldown to work with
+        if not has_valid_cooldown then
+            debug_print('0x05C: No valid cooldown found, skipping timestamp update')
+            return
         end
         
         -- Calculate packet_ruspix_time: Shiny Rakaznarian Plate remaining cooldown - 0x05C value
