@@ -1,0 +1,141 @@
+# FFXINA Addons Repository .gitignore
+
+# Exclude all addon folders by default (selective tracking)
+# Uncomment specific addons below to track them
+
+# Keyring addon (always tracked)
+!Keyring/
+
+# Other addons (uncomment to track)
+# !autohaste/
+# !simplelog/
+# !react/
+# !cpredeem/
+# !cpredeemgpt/
+# !sparks/
+# !cpsparks/
+# !captain/
+# !cfhblock/
+# !seven/
+# !nomount/
+# !butterfeet/
+# !HXUI/
+# !EnemyBuffs/
+# !customHUD/
+# !ja0wait/
+# !libs/
+# !phantomgem/
+# !affinity/
+# !ahgo/
+# !allmaps/
+# !aspect/
+# !autojoin/
+# !autologin/
+# !autorespond/
+# !blucheck/
+# !blumon/
+# !blusets/
+# !casper/
+# !chamcham/
+# !changecall/
+# !chatfix/
+# !chatmon/
+# !checker/
+# !cleancs/
+# !clock/
+# !config/
+# !craftmon/
+# !crosshair/
+# !debuff/
+# !debuffed/
+# !defunct/
+# !distance/
+# !drawdistance/
+# !enternity/
+# !equipmon/
+# !fastswap/
+# !filterless/
+# !filters/
+# !filterscan/
+# !find/
+# !fps/
+# !freemem/
+# !gateway/
+# !hideconsole/
+# !hideobs/
+# !hideparty/
+# !hideui/
+# !ime/
+# !imguistyle/
+# !instantah/
+# !instantchat/
+# !invmon/
+# !itemwatch/
+# !keyidmapper/
+# !links/
+# !logincmd/
+# !luashitacast/
+# !macrofix/
+# !mapdot/
+# !minimapmon/
+# !mipmap/
+# !move/
+# !nokb/
+# !nolock/
+# !nomad/
+# !noname/
+# !omen/
+# !onevent/
+# !oseem/
+# !paranormal/
+# !peekaboo/
+# !petinfo/
+# !react/
+# !recast/
+# !renamer/
+# !repeater/
+# !scenthound/
+# !sexchange/
+# !singlerace/
+# !skeletonkey/
+# !stfu/
+# !tTimers/
+# !timestamp/
+# !tokens/
+# !tparty/
+# !truesight/
+# !watchdog/
+# !xicamera/
+
+# Exclude RAR files
+*.rar
+
+# Exclude temporary and system files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.log
+logs/
+debug_*.lua
+test_*.lua
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Character-specific data (should not be version controlled)
+data/
+settings/
