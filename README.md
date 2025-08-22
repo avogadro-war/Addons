@@ -2,6 +2,8 @@
 
 A Final Fantasy XI addon for Ashita4 that tracks key items with cooldown timers, providing real-time status updates and individual item notifications.
 
+**Current Version: v0.4.1** - Latest features include zone-based packet processing, enhanced safety checks, and accurate acquisition messaging.
+
 ## Features
 
 - **Automatic Detection**: Automatically detects when key items are acquired via packet interception
@@ -16,6 +18,7 @@ A Final Fantasy XI addon for Ashita4 that tracks key items with cooldown timers,
 - **Modern GUI**: Clean, responsive interface with dynamic sizing
 - **Toggleable Notifications**: Full control over zone change notifications
 - **Item Management**: Add, edit, or remove tracked items through an intuitive GUI
+- **Accurate Messaging**: Smart notification system that only shows acquisition messages when items are actually gained
 
 ## Tracked Items
 
@@ -43,7 +46,7 @@ The addon currently tracks these items with their respective cooldowns:
 ### Notification Items
 **Notifications are limited to these three items:**
 - **Moglophone** - Acquisition and ready-for-pickup notifications
-- **Shiny Rakaznarian plate** - Usage and ready-for-pickup notifications  
+- **Shiny Ra'Kaznarian Plate** - Usage and ready-for-pickup notifications  
 - **Mystical Canteen** - Acquisition and ready-for-pickup notifications
 
 ### Other Tracked Items
@@ -89,7 +92,7 @@ All other tracked items are displayed in the GUI with their status and cooldown 
 ### Fix Command Examples
 - `/keyring fix moglophone` or `/keyring fix mog`
 - `/keyring fix canteen` or `/keyring fix mystical`
-- `/keyring fix plate` or `/keyring fix rakaznar`
+- `/keyring fix plate` or `/keyring fix rakaznar` or `/keyring fix ra'kaznarian`
 
 
 
