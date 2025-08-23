@@ -681,7 +681,7 @@ local function render_ruspix_plate_section(packet_tracker, total_width)
     
     -- Status display - centered across entire window
     -- Check if we've ever received valid packet data for Ruspix Plate
-    local has_received_packet_data = packet_ruspix_time > 0 or (packet_tracker and packet_tracker.get_ruspix_last_save_timestamp and packet_tracker.get_ruspix_last_save_timestamp() > 0)
+    local has_received_packet_data = packet_ruspix_time > 0
     
     if not has_received_packet_data then
         -- No valid packet data received yet - show "Unknown"
@@ -797,12 +797,6 @@ local function render_ruspix_plate_section(packet_tracker, total_width)
             end
         end
         
-        -- Show "Last checked" timestamp if available
-        local last_save_timestamp = packet_tracker and packet_tracker.get_ruspix_last_save_timestamp and packet_tracker.get_ruspix_last_save_timestamp() or 0
-        if last_save_timestamp and last_save_timestamp > 0 then
-            local last_checked_date = os.date('%Y-%m-%d %H:%M', last_save_timestamp)
-            imgui.Text('• Last updated: ' .. last_checked_date)
-        end
         imgui.EndTooltip()
     end
     

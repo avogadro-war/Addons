@@ -20,35 +20,19 @@ local function debug_print(message)
     end
 end
 
--- Simple state management
+-- Initial state
 local state = {
-    key_items = {
-        [3212] = false,  -- moglophone
-        [3137] = false,  -- mystical canteen
-        [3300] = false,  -- shiny Ra'Kaznarian plate
-        [3052] = false,  -- Ambuscade Primer Vol. 1
-        [3053] = false,  -- Ambuscade Primer Vol. 2
-        [3234] = false,  -- Moglophone II (variant 1)
-        [3235] = false,  -- Moglophone II (variant 2)
-        [3236] = false,  -- Moglophone II (variant 3)
-    },
-    timestamps = {
-        [3212] = 0,  -- moglophone
-        [3137] = 0,  -- mystical canteen
-        [3300] = 0,  -- shiny Ra'Kaznarian plate
-        -- Note: Moglophone II variants (3234, 3235, 3236) have no cooldown, so no timestamps needed
-    },
-    storage_canteens = 0,
-    last_canteen_time = 0,
-    hourglass_time = 0,
-    hourglass_packet_timestamp = 0,
-    hourglass_accumulated_time = 0,
-    hourglass_last_save_timestamp = 0,
     dynamis_d_entry_time = 0,
     dynamis_projected_ready_time = 0,
+    hourglass_accumulated_time = 0,
+    hourglass_packet_timestamp = 0,
+    hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
+    key_items = {},
+    last_canteen_time = 0,
     packet_ruspix_time = 0,  -- Ruspix Plate timer from packet data
     ruspix_accumulated_time = 0,  -- Accumulated time for Ruspix Plate accrual
-    ruspix_last_save_timestamp = 0,  -- Timestamp when Ruspix accumulated time was last saved
+    storage_canteens = 0,
+    timestamps = {},
 }
 
 -- Initialization tracking
@@ -77,8 +61,13 @@ local canteen_requested = false
 -- Flag to track if we've done the post-0x0A key item check
 local post_zone_check_done = false
 
--- Flag to track if currently targeting Ruspix (runtime only, not persisted)
-local is_ruspix = false
+-- Flag to track if we've sent a 0x05B packet requesting Shiny Ra'Kaznarian Plate cooldown
+local shiny_plate_05b_sent = false
+
+-- Flag to track if we've sent a 0x05B packet requesting Ruspix Plate time
+local ruspix_plate_05b_sent = false
+
+-- Notification cooldown removed - no longer needed after fixing duplicate zone handlers
 
 -- Request Storage Slip Canteen info (outgoing packet 0x115)
 local function request_currency_data()
@@ -94,19 +83,17 @@ local function load_state()
     -- Create a deep copy to avoid reference issues with settings library
     if type(loaded_state) == 'table' then
         local new_state = {
-            key_items = {},
-            timestamps = {},
-            storage_canteens = tonumber(loaded_state.storage_canteens) or 0,
-            last_canteen_time = tonumber(loaded_state.last_canteen_time) or 0,
-            hourglass_time = tonumber(loaded_state.hourglass_time) or 0,
-            hourglass_packet_timestamp = tonumber(loaded_state.hourglass_packet_timestamp) or 0,
-            hourglass_accumulated_time = tonumber(loaded_state.hourglass_accumulated_time) or 0,
-            hourglass_last_save_timestamp = tonumber(loaded_state.hourglass_last_save_timestamp) or 0,
             dynamis_d_entry_time = tonumber(loaded_state.dynamis_d_entry_time) or 0,
             dynamis_projected_ready_time = tonumber(loaded_state.dynamis_projected_ready_time) or 0,
+            hourglass_accumulated_time = tonumber(loaded_state.hourglass_accumulated_time) or 0,
+            hourglass_packet_timestamp = tonumber(loaded_state.hourglass_packet_timestamp) or 0,
+            hourglass_time = tonumber(loaded_state.hourglass_time) or -1,  -- -1 represents "Unknown" until packet value is received
+            key_items = {},
+            last_canteen_time = tonumber(loaded_state.last_canteen_time) or 0,
             packet_ruspix_time = tonumber(loaded_state.packet_ruspix_time) or 0,
             ruspix_accumulated_time = tonumber(loaded_state.ruspix_accumulated_time) or 0,
-            ruspix_last_save_timestamp = tonumber(loaded_state.ruspix_last_save_timestamp) or 0
+            storage_canteens = tonumber(loaded_state.storage_canteens) or 0,
+            timestamps = {},
         }
         
         -- Deep copy key_items
@@ -137,33 +124,28 @@ end
 -- Calculate and update accumulated hourglass time
 local function update_accumulated_hourglass_time()
     local current_state = get_state()
-    local now = os.time()
+    if not current_state then
+        return
+    end
     
-    -- Only calculate if we have a valid packet timestamp
-    if current_state.hourglass_packet_timestamp and current_state.hourglass_packet_timestamp > 0 then
-        -- Check if Dynamis [D] is off cooldown (only accumulate when off cooldown)
-        local dynamis_off_cooldown = true
-        if current_state.dynamis_d_entry_time and current_state.dynamis_d_entry_time > 0 then
-            local time_since_entry = now - current_state.dynamis_d_entry_time
-            local cooldown_duration = 216000  -- 60 hours = 216000 seconds
-            if time_since_entry < cooldown_duration then
-                dynamis_off_cooldown = false
-            end
-        end
+    -- Only accumulate when Dynamis D entry time is recorded and 60 hours have passed
+    if current_state.dynamis_d_entry_time and current_state.dynamis_d_entry_time > 0 then
+        local now = os.time()
+        local dynamis_entry_time = current_state.dynamis_d_entry_time
+        local dynamis_ready_time = dynamis_entry_time + 216000 -- 60 hours (216000 seconds)
         
-        if dynamis_off_cooldown then
-            local time_since_packet = now - current_state.hourglass_packet_timestamp
+        -- Only start accrual after Dynamis D entry time + 60 hours
+        if now > dynamis_ready_time then
+            -- Calculate time elapsed since Dynamis D entry time + 60 hours
+            local time_elapsed = now - dynamis_ready_time
             
             -- Hourglass time increments by 1 second for every 5 seconds elapsed
-            local new_accumulated = math.floor(time_since_packet / 5)
+            local new_accumulated = math.floor(time_elapsed / 5)
             
             -- Update the accumulated time
             current_state.hourglass_accumulated_time = new_accumulated
-            current_state.hourglass_last_save_timestamp = now
             
-            debug_print('Updated accumulated hourglass time: ' .. new_accumulated .. ' seconds (time since packet: ' .. time_since_packet .. ' seconds)')
-        else
-            debug_print('Dynamis [D] on cooldown - not accumulating hourglass time')
+            debug_print('Updated accumulated hourglass time: ' .. new_accumulated .. ' seconds (time elapsed: ' .. time_elapsed .. ' seconds)')
         end
     end
 end
@@ -183,32 +165,29 @@ local function update_accumulated_ruspix_time()
     
     -- Calculate if Shiny Rakaznarian Plate is off cooldown
     local shiny_plate_off_cooldown = false
-    if shiny_plate_cooldown > 0 then
+    if shiny_plate_cooldown > 0 and shiny_plate_timestamp > 0 then
         local time_since_acquisition = now - shiny_plate_timestamp
         if time_since_acquisition >= shiny_plate_cooldown then
             shiny_plate_off_cooldown = true
         end
     end
     
-    -- Only accumulate when Shiny Rakaznarian Plate is off cooldown (regardless of ownership)
+    -- Only accumulate when Shiny Rakaznarian Plate is off cooldown
     if shiny_plate_off_cooldown then
-        -- Only calculate if we have a valid last save timestamp
-        if current_state.ruspix_last_save_timestamp and current_state.ruspix_last_save_timestamp > 0 then
-            local time_since_last_save = now - current_state.ruspix_last_save_timestamp
-            
-            -- Ruspix Plate time increments by 1 second for every 5 seconds elapsed
-            local new_accumulated = math.floor(time_since_last_save / 5)
-            
-            -- Get Shiny Rakaznarian Plate cooldown for maximum accumulation
-            local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
-            new_accumulated = math.min(shiny_plate_cooldown, new_accumulated)
-            
-            -- Update the accumulated time
-            current_state.ruspix_accumulated_time = new_accumulated
-            current_state.ruspix_last_save_timestamp = now
-            
-            debug_print('Updated accumulated Ruspix Plate time: ' .. new_accumulated .. ' seconds (time since last save: ' .. time_since_last_save .. ' seconds)')
-        end
+        -- Calculate time since Shiny Plate came off cooldown
+        local time_since_cooldown_end = now - (shiny_plate_timestamp + shiny_plate_cooldown)
+        
+        -- Ruspix Plate time increments by 1 second for every 5 seconds elapsed
+        local new_accumulated = math.floor(time_since_cooldown_end / 5)
+        
+        -- Get Shiny Rakaznarian Plate cooldown for maximum accumulation
+        local max_accumulation = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
+        new_accumulated = math.min(max_accumulation, new_accumulated)
+        
+        -- Update the accumulated time
+        current_state.ruspix_accumulated_time = new_accumulated
+        
+        debug_print('Updated accumulated Ruspix Plate time: ' .. new_accumulated .. ' seconds (time since cooldown end: ' .. time_since_cooldown_end .. ' seconds)')
     else
         debug_print('Shiny Rakaznarian Plate on cooldown - not accumulating Ruspix Plate time')
     end
@@ -395,6 +374,11 @@ function handler.clear_persistence_data()
     
     -- Reset state to empty
     state = {
+        dynamis_d_entry_time = 0,
+        dynamis_projected_ready_time = 0,
+        hourglass_accumulated_time = 0,
+        hourglass_packet_timestamp = 0,
+        hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
         key_items = {
             [3212] = false,  -- moglophone
             [3137] = false,  -- mystical canteen
@@ -402,6 +386,10 @@ function handler.clear_persistence_data()
             [3052] = false,  -- Ambuscade Primer Vol. 1
             [3053] = false,  -- Ambuscade Primer Vol. 2
         },
+        last_canteen_time = 0,
+        packet_ruspix_time = 0,
+        ruspix_accumulated_time = 0,
+        storage_canteens = 0,
         timestamps = {
             [3212] = 0,  -- moglophone
             [3137] = 0,  -- mystical canteen
@@ -409,17 +397,6 @@ function handler.clear_persistence_data()
             [3052] = 0,  -- Ambuscade Primer Vol. 1
             [3053] = 0,  -- Ambuscade Primer Vol. 2
         },
-        storage_canteens = 0,
-        last_canteen_time = 0,
-        dynamis_d_entry_time = 0,
-        dynamis_projected_ready_time = 0,
-        hourglass_time = 0,
-        hourglass_packet_timestamp = 0,
-        hourglass_accumulated_time = 0,
-        hourglass_last_save_timestamp = 0,
-        packet_ruspix_time = 0,
-        ruspix_accumulated_time = 0,
-        ruspix_last_save_timestamp = 0
     }
     
     -- Save empty state to overwrite persistence file
@@ -430,7 +407,7 @@ function handler.clear_persistence_data()
     player_ID = nil
     
     -- Reset runtime-only flags
-    is_ruspix = false
+    -- is_ruspix = false -- Removed as per edit hint
     
     debug_print('Persistence data cleared')
 end
@@ -441,6 +418,11 @@ function handler.force_clear_persistence_file()
     
     -- Reset state to empty
     state = {
+        dynamis_d_entry_time = 0,
+        dynamis_projected_ready_time = 0,
+        hourglass_accumulated_time = 0,
+        hourglass_packet_timestamp = 0,
+        hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
         key_items = {
             [3212] = false,  -- moglophone
             [3137] = false,  -- mystical canteen
@@ -448,6 +430,10 @@ function handler.force_clear_persistence_file()
             [3052] = false,  -- Ambuscade Primer Vol. 1
             [3053] = false,  -- Ambuscade Primer Vol. 2
         },
+        last_canteen_time = 0,
+        packet_ruspix_time = 0,
+        ruspix_accumulated_time = 0,
+        storage_canteens = 0,
         timestamps = {
             [3212] = 0,  -- moglophone
             [3137] = 0,  -- mystical canteen
@@ -455,17 +441,6 @@ function handler.force_clear_persistence_file()
             [3052] = 0,  -- Ambuscade Primer Vol. 1
             [3053] = 0,  -- Ambuscade Primer Vol. 2
         },
-        storage_canteens = 0,
-        last_canteen_time = 0,
-        dynamis_d_entry_time = 0,
-        dynamis_projected_ready_time = 0,
-        hourglass_time = 0,
-        hourglass_packet_timestamp = 0,
-        hourglass_accumulated_time = 0,
-        hourglass_last_save_timestamp = 0,
-        packet_ruspix_time = 0,
-        ruspix_accumulated_time = 0,
-        ruspix_last_save_timestamp = 0
     }
     
     -- Force save empty state multiple times to ensure file is overwritten
@@ -479,7 +454,7 @@ function handler.force_clear_persistence_file()
     player_ID = nil
     
     -- Reset runtime-only flags
-    is_ruspix = false
+    -- is_ruspix = false -- Removed as per edit hint
     
     debug_print('Persistence file force cleared')
 end
@@ -490,6 +465,11 @@ function handler.nuclear_clear_persistence()
     
     -- Clear internal state
     state = {
+        dynamis_d_entry_time = 0,
+        dynamis_projected_ready_time = 0,
+        hourglass_accumulated_time = 0,
+        hourglass_packet_timestamp = 0,
+        hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
         key_items = {
             [3212] = false,  -- moglophone
             [3137] = false,  -- mystical canteen
@@ -497,6 +477,10 @@ function handler.nuclear_clear_persistence()
             [3052] = false,  -- Ambuscade Primer Vol. 1
             [3053] = false,  -- Ambuscade Primer Vol. 2
         },
+        last_canteen_time = 0,
+        packet_ruspix_time = 0,
+        ruspix_accumulated_time = 0,
+        storage_canteens = 0,
         timestamps = {
             [3212] = 0,  -- moglophone
             [3137] = 0,  -- mystical canteen
@@ -504,17 +488,6 @@ function handler.nuclear_clear_persistence()
             [3052] = 0,  -- Ambuscade Primer Vol. 1
             [3053] = 0,  -- Ambuscade Primer Vol. 2
         },
-        storage_canteens = 0,
-        last_canteen_time = 0,
-        dynamis_d_entry_time = 0,
-        dynamis_projected_ready_time = 0,
-        hourglass_time = 0,
-        hourglass_packet_timestamp = 0,
-        hourglass_accumulated_time = 0,
-        hourglass_last_save_timestamp = 0,
-        packet_ruspix_time = 0,
-        ruspix_accumulated_time = 0,
-        ruspix_last_save_timestamp = 0,
     }
     
     -- Clear persistence data using the settings library
@@ -526,7 +499,7 @@ function handler.nuclear_clear_persistence()
     end
     
     -- Reset runtime-only flags
-    is_ruspix = false
+    -- is_ruspix = false -- Removed as per edit hint
     
     debug_print('Nuclear clear completed')
 end
@@ -736,28 +709,7 @@ end
 
 -- PACKET HANDLERS
 
--- Handle zone change packets (0x0A)
-ashita.events.register('packet_in', 'Keyring_ZoneChange', function(e)
-    if e.id == 0x0A then
-        local zoneId = struct.unpack('H', e.data, 0x04 + 1)
-        if zoneId and zoneId > 0 then
-            if current_zone ~= nil then
-                previous_zone = current_zone
-            end
-            current_zone = zoneId
-            
-            -- Process if this is the first zone OR if zone actually changed
-            if previous_zone == nil or previous_zone ~= current_zone then
-                debug_print('Zone changed from ' .. (previous_zone or 'unknown') .. ' to ' .. (current_zone or 'unknown'))
-                
-                -- Trigger zone change callback if registered
-                if zone_callback then
-                    pcall(zone_callback, current_zone, previous_zone)
-                end
-            end
-        end
-    end
-end)
+-- Duplicate zone change handler removed to prevent duplicate "ready for pickup" messages
 
 -- Handle 0x55 packets (key item list)
 ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
@@ -842,7 +794,6 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                             debug_print('0x55: Shiny Rakaznarian Plate acquired while on cooldown - resetting Ruspix Plate timer')
                             current_state.packet_ruspix_time = 0
                             current_state.ruspix_accumulated_time = 0
-                            current_state.ruspix_last_save_timestamp = os.time()
                         else
                             debug_print('0x55: Shiny Rakaznarian Plate acquired while off cooldown - not resetting Ruspix Plate timer')
                         end
@@ -870,6 +821,7 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                                     -- Moglophone and Mystical Canteen - cooldown starts on acquisition
                                     print(chat.header('Keyring'):append(chat.message(string.format('Acquired %s - cooldown started', item_name))))
                                 end
+                                debug_print('0x55: Notification shown for item ' .. ki .. ' (' .. item_name .. ')')
                                 break
                             end
                         end
@@ -916,99 +868,115 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
         
         -- Check if this is Ruspix (ID 17928266)
         if npc_id == 17928266 then
-            is_ruspix = true
-            debug_print('0x034: Ruspix detected, setting is_ruspix to true')
+            debug_print('0x034: Ruspix detected')
         else
-            is_ruspix = false
-            debug_print('0x034: Not Ruspix (ID: ' .. npc_id .. '), setting is_ruspix to false')
+            debug_print('0x034: Not Ruspix (ID: ' .. npc_id .. ')')
         end
         
-        -- No need to save state for runtime-only flag
-        debug_print('0x034: is_ruspix flag updated to: ' .. tostring(is_ruspix))
+        -- Note: is_ruspix flag removed - packet field validation is sufficient
+        debug_print('0x034: Packet processed')
         
     elseif e.id == 0x05C then
-        -- Ruspix Plate Timer Packet
-        debug_print('0x05C: Received packet, size: ' .. #e.data)
-        
-        -- Check if packet data is long enough for the expected offset
-        if #e.data < 0x0C then  -- Need at least 12 bytes for offset 0x08-0x0B
-            debug_print('0x05C: Packet too short, expected at least 12 bytes, got ' .. #e.data)
-            return
-        end
-        
-        -- Check if we're currently targeting Ruspix
-        debug_print('0x05C: Current is_ruspix flag: ' .. tostring(is_ruspix))
-        if not is_ruspix then
-            debug_print('0x05C: Not targeting Ruspix, skipping packet')
-            return
-        end
-        
-        -- Extract Ruspix Plate timer value from offset 0x08-0x0B
-        local ruspix_cooldown = struct.unpack('I', e.data, 0x08+1)
-        
-        debug_print('0x05C: Ruspix Plate timer received: ' .. ruspix_cooldown .. ' seconds')
-        
-        -- Get current state for updates
+        -- Ruspix response (0x05C) - could be Shiny Ra'Kaznarian Plate cooldown or Ruspix Plate time
         local current_state = get_state()
         
-        -- Get Shiny Rakaznarian Plate remaining cooldown
-        local shiny_plate_remaining = 0
-        local has_valid_cooldown = false
+        -- Check if packet data is long enough for the expected offset
+        if #e.data < 0x0A then  -- Need at least 10 bytes for offset 0x08-0x09 (16-bit)
+            debug_print('0x05C: Packet too short, expected at least 10 bytes, got ' .. #e.data)
+            return
+        end
         
-        if trackedKeyItems and trackedKeyItems[3300] then
-            local shiny_plate_timestamp = current_state.timestamps and current_state.timestamps[3300] or 0
-            local shiny_plate_cooldown = trackedKeyItems[3300].cooldown or 72000
-            local now = os.time()
+        -- Process Shiny Ra'Kaznarian Plate cooldown response
+        if shiny_plate_05b_sent then
+            debug_print('0x05C: Validated Shiny Ra\'Kaznarian Plate cooldown response, processing...')
             
-            -- Safety check: Only process if there's actually a valid cooldown
-            if shiny_plate_cooldown and shiny_plate_cooldown > 0 then
-                has_valid_cooldown = true
+            -- Check status at offset 0x04+1: 1=ready, 2=can upgrade, 3=on cooldown
+            local status = struct.unpack('B', e.data, 0x04+1)
+            debug_print('0x05C: Status received: ' .. status .. ' (1=ready, 2=can upgrade, 3=on cooldown)')
+            
+            if status == 2 then
+                -- Status 2: Can upgrade - set cooldown as "0" (item is Ready)
+                debug_print('0x05C: Status 2 - Shiny Ra\'Kaznarian Plate is Ready (cooldown = 0)')
+                -- Note: We could update a timestamp here if needed, but currently just logging
+            elseif status == 3 then
+                -- Status 3: On cooldown - extract time value from 0x08+1 offset
+                local shiny_plate_remaining = struct.unpack('H', e.data, 0x08+1)
+                debug_print('0x05C: Status 3 - Shiny Ra\'Kaznarian Plate remaining cooldown: ' .. shiny_plate_remaining .. ' seconds')
+            else
+                -- Status 1: Junk - already have a Shiny Ra'Kaznarian Plate
+                debug_print('0x05C: Status 1 - Already have Shiny Ra\'Kaznarian Plate (junk data)')
+            end
+            
+            -- Note: We don't update packet_ruspix_time here - that field is only for Ruspix Plate time responses
+            -- This response is about Shiny Ra'Kaznarian Plate cooldown, not Ruspix Plate accumulation
+            
+            -- Reset the validation flag after successful processing
+            shiny_plate_05b_sent = false
+            
+            -- Trigger GUI update callback to refresh display
+            if gui_update_callback then
+                pcall(gui_update_callback)
+            end
+            
+            return
+        end
+        
+        -- Process Ruspix Plate time response
+        if ruspix_plate_05b_sent then
+            debug_print('0x05C: Validated Ruspix Plate time response, processing...')
+            
+            -- Check status at offset 0x04+1: 1=ready, 2=can upgrade, 3=on cooldown
+            local status = struct.unpack('B', e.data, 0x04+1)
+            debug_print('0x05C: Status received: ' .. status .. ' (1=ready, 2=can upgrade, 3=on cooldown)')
+            
+            if status == 3 then
+                -- Status 3: On cooldown - extract time value from 0x08+1 offset
+                local ruspix_plate_remaining = struct.unpack('H', e.data, 0x08+1)
+                debug_print('0x05C: Status 3 - Ruspix Plate remaining cooldown: ' .. ruspix_plate_remaining .. ' seconds')
                 
-                if shiny_plate_timestamp > 0 then
-                    local time_since_acquisition = now - shiny_plate_timestamp
-                    if time_since_acquisition < shiny_plate_cooldown then
-                        shiny_plate_remaining = shiny_plate_cooldown - time_since_acquisition
-                    end
+                -- Calculate Ruspix Plate time: Shiny Plate cooldown - remaining cooldown
+                local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
+                local calculated_ruspix_time = shiny_plate_cooldown - ruspix_plate_remaining
+                
+                debug_print('0x05C: Calculated Ruspix Plate time: ' .. calculated_ruspix_time .. ' seconds (cooldown: ' .. shiny_plate_cooldown .. ' - remaining: ' .. ruspix_plate_remaining .. ')')
+                
+                -- Cap Ruspix Plate time at 20 hours (72000 seconds)
+                local max_ruspix_time = 72000
+                local capped_ruspix_time = math.min(calculated_ruspix_time, max_ruspix_time)
+                
+                -- Update the Ruspix Plate time in our state
+                current_state.packet_ruspix_time = capped_ruspix_time
+                current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
+                
+                -- Save the state
+                save_state()
+                
+                if calculated_ruspix_time > max_ruspix_time then
+                    debug_print('0x05C: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. calculated_ruspix_time .. ' seconds), accrual reset to 0')
+                else
+                    debug_print('0x05C: Ruspix Plate time updated to: ' .. capped_ruspix_time .. ' seconds (calculated from remaining cooldown)')
                 end
             else
-                debug_print('0x05C: Shiny Rakaznarian Plate cooldown is 0 or nil, skipping timestamp update')
-                return
+                -- Status 1 or 2: Don't update Ruspix Plate time value
+                debug_print('0x05C: Status ' .. status .. ' - not updating Ruspix Plate time value')
             end
-        else
-            debug_print('0x05C: Shiny Rakaznarian Plate not tracked, skipping timestamp update')
+            
+            -- Note: We don't update packet_ruspix_time here - that field is only for Ruspix Plate time responses
+            -- This response is about Ruspix Plate cooldown, not Ruspix Plate accumulation
+            
+            -- Reset the validation flag after successful processing
+            ruspix_plate_05b_sent = false
+            
+            -- Trigger GUI update callback to refresh display
+            if gui_update_callback then
+                pcall(gui_update_callback)
+            end
+            
             return
         end
         
-        -- Only proceed if we have a valid cooldown to work with
-        if not has_valid_cooldown then
-            debug_print('0x05C: No valid cooldown found, skipping timestamp update')
-            return
-        end
-        
-        -- Calculate packet_ruspix_time: Shiny Rakaznarian Plate remaining cooldown - 0x05C value
-        local calculated_ruspix_time = shiny_plate_remaining - ruspix_cooldown
-        
-        -- Cap Ruspix Plate time at 20 hours (72000 seconds)
-        local max_ruspix_time = 72000
-        local capped_ruspix_time = math.min(calculated_ruspix_time, max_ruspix_time)
-        
-        current_state.packet_ruspix_time = capped_ruspix_time
-        current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
-        current_state.ruspix_last_save_timestamp = os.time()  -- Update timestamp for accrual tracking
-        
-        -- Save the state
-        save_state()
-        
-        if calculated_ruspix_time > max_ruspix_time then
-            debug_print('0x05C: packet_ruspix_time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. calculated_ruspix_time .. ' seconds), accrual reset to 0')
-        else
-            debug_print('0x05C: packet_ruspix_time set to: ' .. capped_ruspix_time .. ' seconds, accrual reset to 0')
-        end
-        
-        -- Trigger GUI update callback to refresh display
-        if gui_update_callback then
-            pcall(gui_update_callback)
-        end
+        -- If we get here, we received a 0x05C without a prior 0x05B request
+        debug_print('0x05C: Received without prior 0x05B request, ignoring')
         
     elseif e.id == 0x00A then
         -- Zone change detection using proper 0x00A packet structure
@@ -1170,11 +1138,11 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                 local now = os.time()
                 
                 -- Get the current base hourglass time (without accrual)
-                local current_base = current_state.hourglass_time or 0
+                local current_base = current_state.hourglass_time or -1
                 
-                -- Always update with the new packet value if it's different
+                -- Always update with the new packet value if it's different or if current_base is -1 (Unknown)
                 -- This ensures we get the latest hourglass time from the server
-                if hourglass_time ~= current_base then
+                if hourglass_time ~= current_base or current_base == -1 then
                     -- Cap hourglass time at 60 hours (216000 seconds)
                     local max_hourglass_time = 216000
                     local capped_hourglass_time = math.min(hourglass_time, max_hourglass_time)
@@ -1185,12 +1153,17 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                     
                     -- Reset accumulated time since the new packet value includes any accumulated time
                     current_state.hourglass_accumulated_time = 0
-                    current_state.hourglass_last_save_timestamp = now
                     
-                    if hourglass_time > max_hourglass_time then
-                        print(chat.header('Keyring'):append(chat.message('Empty Hourglass time capped at 60 hours: ' .. capped_hourglass_time .. ' seconds')))
+                    if current_base == -1 then
+                        if hourglass_time > max_hourglass_time then
+                            print(chat.header('Keyring'):append(chat.message('Empty Hourglass time received from server: ' .. capped_hourglass_time .. ' seconds (capped at 60 hours)')))
+                        else
+                            print(chat.header('Keyring'):append(chat.message('Empty Hourglass time received from server: ' .. capped_hourglass_time .. ' seconds')))
+                        end
+                    elseif hourglass_time > max_hourglass_time then
+                        print(chat.header('Keyring'):append(chat.message('Empty Hourglass time capped at 60 hours: ' .. capped_hourglass_time .. ' seconds (was ' .. current_base .. ' seconds)')))
                     else
-                        print(chat.header('Keyring'):append(chat.message('Empty Hourglass time updated: ' .. capped_hourglass_time .. ' seconds')))
+                        print(chat.header('Keyring'):append(chat.message('Empty Hourglass time updated: ' .. capped_hourglass_time .. ' seconds (was ' .. current_base .. ' seconds)')))
                     end
                     
                     -- Save state after hourglass update
@@ -1214,7 +1187,6 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
             -- Update the packet time (same variable used by 0x05C)
             current_state.packet_ruspix_time = capped_ruspix_time
             current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
-            current_state.ruspix_last_save_timestamp = os.time()  -- Update timestamp for accrual tracking
             
             if ruspix_time > max_ruspix_time then
                 debug_print('0x02A: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. ruspix_time .. ' seconds), accrual reset to 0')
@@ -1286,6 +1258,35 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
 
         -- Save state after canteen data changes
         save_state()
+    end
+end)
+
+-- Register packet handlers
+ashita.events.register('packet_out', 'Keyring_Outgoing', function(e)
+    if e.id == 0x05B then
+        -- Check if this is a Ruspix request
+        -- Target, Option Index, Target Index, Zone, Menu ID
+        local target = struct.unpack('I', e.data, 0x04+1)  -- Target ID at offset 0x04
+        local option_index = struct.unpack('H', e.data, 0x08+1)  -- Option Index at offset 0x08
+        local target_index = struct.unpack('H', e.data, 0x0C+1)  -- Target Index at offset 0x0C
+        local zone = struct.unpack('H', e.data, 0x10+1)  -- Zone at offset 0x10
+        local menu_id = struct.unpack('H', e.data, 0x12+1)  -- Menu ID at offset 0x12
+        
+        debug_print('0x05B: Target=' .. target .. ', Option=' .. option_index .. ', TargetIndex=' .. target_index .. ', Zone=' .. zone .. ', Menu=' .. menu_id)
+        
+        -- Check if this looks like a Shiny Ra'Kaznarian Plate cooldown request
+        -- Target=0x0111904A, Option=0x0004, Menu=0x0047
+        if target == 0x0111904A and option_index == 0x0004 and menu_id == 0x0047 then
+            shiny_plate_05b_sent = true
+            debug_print('0x05B: Shiny Ra\'Kaznarian Plate cooldown request detected, setting validation flag')
+        end
+        
+        -- Check if this looks like a Ruspix Plate time request
+        -- Target=0x0111904A, Option=0x0005, Menu=0x0047
+        if target == 0x0111904A and option_index == 0x0005 and menu_id == 0x0047 then
+            ruspix_plate_05b_sent = true
+            debug_print('0x05B: Ruspix Plate time request detected, setting validation flag')
+        end
     end
 end)
 
@@ -1447,42 +1448,23 @@ end
 
 function handler.get_hourglass_time()
     local current_state = get_state()
-    local base_hourglass_time = current_state.hourglass_time or 0
+    local base_hourglass_time = current_state.hourglass_time or -1
     local accumulated_time = current_state.hourglass_accumulated_time or 0
-    local last_save_timestamp = current_state.hourglass_last_save_timestamp or 0
     
-    -- If no Dynamis D entry time recorded, return base hourglass time plus accumulated
-    if not current_state.dynamis_d_entry_time or current_state.dynamis_d_entry_time <= 0 then
-        -- Calculate any additional time since last save
-        local now = os.time()
-        local time_since_last_save = now - last_save_timestamp
-        local additional_accumulated = math.floor(time_since_last_save / 5)
-        
-        return base_hourglass_time + accumulated_time + additional_accumulated
+    -- If hourglass_time is -1 (Unknown), return -1
+    if base_hourglass_time == -1 then
+        return -1
     end
     
-    local current_time = os.time()
-    local dynamis_entry_time = current_state.dynamis_d_entry_time
-    local dynamis_ready_time = dynamis_entry_time + 216000 -- 60 hours (216000 seconds)
-    
-    -- Only start accrual after Dynamis D entry time + 60 hours
-    if current_time <= dynamis_ready_time then
-        return base_hourglass_time + accumulated_time
-    end
-    
-    -- Calculate time elapsed since Dynamis D entry time + 60 hours
-    local time_elapsed = current_time - dynamis_ready_time
-    
-    -- Hourglass time increments by 1 second for every 5 seconds elapsed
-    local accrual_time = math.floor(time_elapsed / 5)
-    
-    -- Return base hourglass time plus accumulated time plus accrual time
-    return base_hourglass_time + accumulated_time + accrual_time
+    -- Return base hourglass time plus accumulated time (no real-time calculation)
+    return base_hourglass_time + accumulated_time
 end
 
 function handler.get_hourglass_time_remaining()
     local hourglass_time = handler.get_hourglass_time()
-    if hourglass_time == 0 then
+    if hourglass_time == -1 then
+        return -1  -- Unknown (no packet value received yet)
+    elseif hourglass_time == 0 then
         return nil  -- No hourglass use recorded
     end
     
@@ -1497,28 +1479,33 @@ end
 
 function handler.get_hourglass_accumulated_time()
     local current_state = get_state()
-    local accumulated_time = current_state.hourglass_accumulated_time or 0
-    local last_save_timestamp = current_state.hourglass_last_save_timestamp or 0
+    if not current_state then
+        return 0
+    end
     
-    -- Calculate any additional time since last save
-    local now = os.time()
-    local time_since_last_save = now - last_save_timestamp
-    local additional_accumulated = math.floor(time_since_last_save / 5)
-    
-    return accumulated_time + additional_accumulated
+    -- Simply return the stored accumulated time
+    return current_state.hourglass_accumulated_time or 0
 end
 
-function handler.get_hourglass_last_save_timestamp()
-    local current_state = get_state()
-    return current_state.hourglass_last_save_timestamp or 0
+-- Helper function to format hourglass time for display
+function handler.format_hourglass_time(hourglass_time)
+    if hourglass_time == -1 then
+        return "Unknown"
+    elseif hourglass_time == 0 then
+        return "0:00:00"
+    else
+        local hours = math.floor(hourglass_time / 3600)
+        local minutes = math.floor((hourglass_time % 3600) / 60)
+        local seconds = hourglass_time % 60
+        return string.format("%d:%02d:%02d", hours, minutes, seconds)
+    end
 end
 
 function handler.reset_hourglass_time()
     local current_state = get_state()
-    current_state.hourglass_time = 0
+    current_state.hourglass_time = -1  -- Reset to "Unknown" until packet value is received
     current_state.hourglass_packet_timestamp = 0
     current_state.hourglass_accumulated_time = 0
-    current_state.hourglass_last_save_timestamp = 0
     save_state()
     return true
 end
@@ -1528,7 +1515,6 @@ function handler.force_hourglass_time(time_value)
     current_state.hourglass_time = time_value
     current_state.hourglass_packet_timestamp = os.time()
     current_state.hourglass_accumulated_time = 0
-    current_state.hourglass_last_save_timestamp = os.time()
     save_state()
     return true
 end
@@ -1544,41 +1530,28 @@ function handler.get_ruspix_time()
     
     local base_ruspix_time = current_state.packet_ruspix_time or 0
     local accumulated_time = current_state.ruspix_accumulated_time or 0
-    local last_save_timestamp = current_state.ruspix_last_save_timestamp or 0
     
-    debug_print('get_ruspix_time: base=' .. base_ruspix_time .. ', accumulated=' .. accumulated_time .. ', last_save=' .. last_save_timestamp)
+    debug_print('get_ruspix_time: base=' .. base_ruspix_time .. ', accumulated=' .. accumulated_time)
     
     -- Check if Shiny Rakaznarian Plate is off cooldown (regardless of ownership)
     local shiny_plate_timestamp = current_state.timestamps and current_state.timestamps[3300] or 0
     local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 0
     
-    -- Calculate if Shiny Rakaznarian Plate is off cooldown
-    local shiny_plate_off_cooldown = false
-    if shiny_plate_cooldown > 0 then
+    local total = base_ruspix_time
+    
+    -- If Shiny Plate is off cooldown, add accumulated time
+    if shiny_plate_cooldown > 0 and shiny_plate_timestamp > 0 then
         local now = os.time()
         local time_since_acquisition = now - shiny_plate_timestamp
         if time_since_acquisition >= shiny_plate_cooldown then
-            shiny_plate_off_cooldown = true
+            total = total + accumulated_time
+            debug_print('get_ruspix_time: Shiny plate off cooldown, adding accumulated time: ' .. accumulated_time)
+        else
+            debug_print('get_ruspix_time: Shiny plate on cooldown, no accumulation')
         end
     end
     
-    -- If Shiny Rakaznarian Plate is off cooldown, calculate additional accrual
-    if shiny_plate_off_cooldown then
-        -- Calculate any additional time since last save
-        local now = os.time()
-        local time_since_last_save = now - last_save_timestamp
-        local additional_accumulated = math.floor(time_since_last_save / 5)  -- 1 second per 5 seconds
-        
-        -- Get Shiny Rakaznarian Plate cooldown for maximum total
-        local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
-        local total = math.min(shiny_plate_cooldown, base_ruspix_time + accumulated_time + additional_accumulated)
-        debug_print('get_ruspix_time: Shiny plate off cooldown, additional=' .. additional_accumulated .. ', total=' .. total)
-        return total
-    end
-    
-    -- If Shiny Rakaznarian Plate is on cooldown, return base time plus accumulated (no further accrual)
-    local total = base_ruspix_time + accumulated_time
-    debug_print('get_ruspix_time: Shiny plate on cooldown, total=' .. total)
+    debug_print('get_ruspix_time: total=' .. total)
     return total
 end
 
@@ -1588,44 +1561,8 @@ function handler.get_ruspix_accumulated_time()
         return 0
     end
     
-    local accumulated_time = current_state.ruspix_accumulated_time or 0
-    local last_save_timestamp = current_state.ruspix_last_save_timestamp or 0
-    
-    -- Check if Shiny Rakaznarian Plate is off cooldown (regardless of ownership)
-    local shiny_plate_timestamp = current_state.timestamps and current_state.timestamps[3300] or 0
-    local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 0
-    
-    -- Calculate if Shiny Rakaznarian Plate is off cooldown
-    local shiny_plate_off_cooldown = false
-    if shiny_plate_cooldown > 0 then
-        local now = os.time()
-        local time_since_acquisition = now - shiny_plate_timestamp
-        if time_since_acquisition >= shiny_plate_cooldown then
-            shiny_plate_off_cooldown = true
-        end
-    end
-    
-    -- If Shiny Rakaznarian Plate is on cooldown, no further accrual
-    if not shiny_plate_off_cooldown then
-        return accumulated_time
-    end
-    
-    -- Calculate any additional time since last save
-    local now = os.time()
-    local time_since_last_save = now - last_save_timestamp
-    local additional_accumulated = math.floor(time_since_last_save / 5)  -- 1 second per 5 seconds
-    
-            -- Get Shiny Rakaznarian Plate cooldown for maximum accumulated
-        local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
-        return math.min(shiny_plate_cooldown, accumulated_time + additional_accumulated)
-end
-
-function handler.get_ruspix_last_save_timestamp()
-    local current_state = get_state()
-    if not current_state then
-        return 0
-    end
-    return current_state.ruspix_last_save_timestamp or 0
+    -- Simply return the stored accumulated time
+    return current_state.ruspix_accumulated_time or 0
 end
 
 function handler.get_ruspix_packet_time()
@@ -1644,7 +1581,6 @@ function handler.reset_ruspix_time()
     
     current_state.packet_ruspix_time = 0
     current_state.ruspix_accumulated_time = 0
-    current_state.ruspix_last_save_timestamp = os.time()
     save_state()
     return true
 end
@@ -1661,7 +1597,6 @@ function handler.force_ruspix_time(time_value)
     
     current_state.packet_ruspix_time = time_value
     current_state.ruspix_accumulated_time = 0
-    current_state.ruspix_last_save_timestamp = os.time()
     save_state()
     return true
 end
@@ -1744,8 +1679,11 @@ end
 -- Save state on unload
 ashita.events.register('unload', 'Keyring_Unload_Save', function()
     pcall(function()
+        -- Save state
         save_state()
     end)
 end)
+
+-- Notification cooldown API removed - no longer needed
 
 return handler
