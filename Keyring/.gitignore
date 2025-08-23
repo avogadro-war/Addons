@@ -3,8 +3,9 @@
 # Exclude all addon folders by default (selective tracking)
 # Uncomment specific addons below to track them
 
-# Keyring addon (always tracked)
+# Tracked addons
 !Keyring/
+!onevent2/
 
 # Other addons (uncomment to track)
 # !autohaste/
@@ -86,6 +87,7 @@
 # !noname/
 # !omen/
 # !onevent/
+!onevent2/
 # !oseem/
 # !paranormal/
 # !peekaboo/

@@ -16,13 +16,15 @@ local DEFAULTS = T{
         [3300] = false,  -- shiny Ra'Kaznarian plate
         [3052] = false,  -- Ambuscade Primer Vol. 1
         [3053] = false,  -- Ambuscade Primer Vol. 2
+        [3234] = false,  -- Moglophone II (variant 1)
+        [3235] = false,  -- Moglophone II (variant 2)
+        [3236] = false,  -- Moglophone II (variant 3)
     },
     timestamps = T{
         [3212] = 0,  -- moglophone
         [3137] = 0,  -- mystical canteen
         [3300] = 0,  -- shiny Ra'Kaznarian plate
-        [3052] = 0,  -- Ambuscade Primer Vol. 1
-        [3053] = 0,  -- Ambuscade Primer Vol. 2
+        -- Note: Moglophone II variants (3234, 3235, 3236) have no cooldown, so no timestamps needed
     },
     storage_canteens = 0,
     last_canteen_time = 0,
@@ -56,7 +58,7 @@ function persistence.load_state(debug_print)
     settings_tbl.ruspix_accumulated_time = tonumber(settings_tbl.ruspix_accumulated_time) or 0
     settings_tbl.ruspix_last_save_timestamp = tonumber(settings_tbl.ruspix_last_save_timestamp) or 0
 
-    -- Ensure key_items and timestamps exist and have numeric keys
+    -- Ensure key_items exist and have numeric keys
     if not settings_tbl.key_items then
         settings_tbl.key_items = {}
         for id, _ in pairs(DEFAULTS.key_items) do
@@ -64,8 +66,10 @@ function persistence.load_state(debug_print)
         end
     end
     
+    -- Only create timestamps for items that actually have cooldowns
     if not settings_tbl.timestamps then
         settings_tbl.timestamps = {}
+        -- Only add timestamps for items with cooldowns (not Moglophone II variants)
         for id, _ in pairs(DEFAULTS.timestamps) do
             settings_tbl.timestamps[id] = 0
         end

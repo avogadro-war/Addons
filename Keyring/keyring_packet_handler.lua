@@ -28,13 +28,15 @@ local state = {
         [3300] = false,  -- shiny Ra'Kaznarian plate
         [3052] = false,  -- Ambuscade Primer Vol. 1
         [3053] = false,  -- Ambuscade Primer Vol. 2
+        [3234] = false,  -- Moglophone II (variant 1)
+        [3235] = false,  -- Moglophone II (variant 2)
+        [3236] = false,  -- Moglophone II (variant 3)
     },
     timestamps = {
         [3212] = 0,  -- moglophone
         [3137] = 0,  -- mystical canteen
         [3300] = 0,  -- shiny Ra'Kaznarian plate
-        [3052] = 0,  -- Ambuscade Primer Vol. 1
-        [3053] = 0,  -- Ambuscade Primer Vol. 2
+        -- Note: Moglophone II variants (3234, 3235, 3236) have no cooldown, so no timestamps needed
     },
     storage_canteens = 0,
     last_canteen_time = 0,
@@ -637,31 +639,58 @@ end
 function handler.get_key_item_statuses()
     local result = {}
     local current_state = get_state()
-    
-
+    local grouped_items = {}
     
     -- Ensure tables exist
     if not current_state.timestamps then current_state.timestamps = {} end
     if not current_state.key_items then current_state.key_items = {} end
     
     for id, data in pairs(trackedKeyItems) do
-        local timestamp = current_state.timestamps[id] or 0
-        local remaining = nil
-        
-        if timestamp > 0 then
-            remaining = (timestamp + data.cooldown) - os.time()
+        if data.group == "moglophone_ii" then
+            -- Group Moglophone II variants together
+            if not grouped_items["Moglophone II"] then
+                grouped_items["Moglophone II"] = {
+                    id = "moglophone_ii_group",
+                    name = "Moglophone II",
+                    remaining = nil,
+                    timestamp = 0,
+                    owned = false,
+                    group = "moglophone_ii",
+                    variant_count = 0
+                }
+            end
+            -- Count variants as owned
+            if current_state.key_items[id] == true then
+                grouped_items["Moglophone II"].variant_count = grouped_items["Moglophone II"].variant_count + 1
+                grouped_items["Moglophone II"].owned = true
+                debug_print('Moglophone II variant ' .. id .. ' is owned, total count: ' .. grouped_items["Moglophone II"].variant_count)
+            end
+        else
+            -- Regular items
+            local timestamp = current_state.timestamps[id] or 0
+            local remaining = nil
+            
+            -- Only calculate remaining time for items with cooldowns
+            if data.cooldown > 0 and timestamp > 0 then
+                remaining = (timestamp + data.cooldown) - os.time()
+            end
+            
+            local name = key_items.idToName[id] or ('Unknown ID: ' .. tostring(id))
+            local owned = current_state.key_items[id] == true
+            
+            table.insert(result, {
+                id = id,
+                name = name,
+                remaining = remaining,
+                timestamp = timestamp,
+                owned = owned,
+            })
         end
-        
-        local name = key_items.idToName[id] or ('Unknown ID: ' .. tostring(id))
-        local owned = current_state.key_items[id] == true
-        
-        table.insert(result, {
-            id = id,
-            name = name,
-            remaining = remaining,
-            timestamp = timestamp,
-            owned = owned,
-        })
+    end
+    
+    -- Add grouped items
+    for _, grouped_item in pairs(grouped_items) do
+        table.insert(result, grouped_item)
     end
     
     return result

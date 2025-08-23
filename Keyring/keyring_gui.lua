@@ -242,7 +242,15 @@ local function render_time_remaining(item, hasItem, storage_canteens, packet_tra
         local timestamp = item.timestamp or 0
         
         -- Check if this item has no cooldown (cooldown = 0)
-        local cooldown = trackedKeyItems[item.id] and trackedKeyItems[item.id].cooldown
+        local cooldown = 0
+        
+        if item.group == "moglophone_ii" then
+            -- Moglophone II variants have no cooldown
+            cooldown = 0
+        elseif trackedKeyItems[item.id] then
+            -- Regular items - get cooldown from tracked items
+            cooldown = trackedKeyItems[item.id].cooldown
+        end
         
         if cooldown == 0 then
             -- Item has no cooldown - show dash in time column
@@ -357,9 +365,21 @@ local function render_key_item_row(item, hasItem, storage_canteens, packet_track
     imgui.NextColumn()
 
     -- Have? (centered, colored)
-    local statusText = hasItem and 'Yes' or 'No'
-    local statusColor = hasItem and {0, 1, 0, 1} or {1, 0.2, 0.2, 1}
+    local statusText, statusColor
     
+    if item.group == "moglophone_ii" then
+        -- For grouped Moglophone II, show count
+        statusText = tostring(item.variant_count)
+        if item.variant_count >= 3 then
+            statusColor = {0, 1, 0, 1} -- Green when all 3 variants owned
+        else
+            statusColor = {1, 1, 0, 1} -- Yellow when less than 3 variants
+        end
+    else
+        -- Regular items
+        statusText = hasItem and 'Yes' or 'No'
+        statusColor = hasItem and {0, 1, 0, 1} or {1, 0.2, 0.2, 1}
+    end
 
     do
         local col_start = imgui.GetColumnOffset()
@@ -368,8 +388,6 @@ local function render_key_item_row(item, hasItem, storage_canteens, packet_track
         local pos_x = col_start + (col_width - text_width) / 2
         imgui.SetCursorPosX(pos_x)
         imgui.TextColored(statusColor, statusText)
-        
-
     end
     imgui.NextColumn()
 
@@ -845,7 +863,11 @@ function gui.render(keyItemStatuses, trackedKeyItems, storage_canteens, packet_t
     for i, item in ipairs(sortedItems) do
         local hasItem = item.owned
         
-
+        -- For grouped items, we need to handle them specially
+        if item.group == "moglophone_ii" then
+            -- Grouped items are always considered "owned" if they have variants
+            hasItem = item.variant_count > 0
+        end
         
         render_key_item_row(item, hasItem, storage_canteens, packet_tracker)
     end

@@ -24,6 +24,10 @@ local trackedKeyItems = {
     -- Items without cooldowns 
     [3052] = { cooldown = 0, name = "Ambuscade Primer Vol. 1" },
     [3053] = { cooldown = 0, name = "Ambuscade Primer Vol. 2" },
+    -- Moglophone II variants (grouped together)
+    [3234] = { cooldown = 0, name = "Moglophone II", group = "moglophone_ii" },
+    [3235] = { cooldown = 0, name = "Moglophone II", group = "moglophone_ii" },
+    [3236] = { cooldown = 0, name = "Moglophone II", group = "moglophone_ii" },
     -- Add more items without cooldowns here as needed
 }
 
@@ -175,12 +179,35 @@ end
 
 local function get_tracked_items()
     local items = {}
+    local grouped_items = {}
+    
+    -- First pass: collect all items and group Moglophone II variants
     for id, data in pairs(trackedKeyItems) do
-        table.insert(items, {
-            id = id,
-            name = data.name,
-            cooldown = data.cooldown
-        })
+        if data.group == "moglophone_ii" then
+            -- Group Moglophone II variants together
+            if not grouped_items["Moglophone II"] then
+                grouped_items["Moglophone II"] = {
+                    id = "moglophone_ii_group",
+                    name = "Moglophone II",
+                    cooldown = 0,
+                    group = "moglophone_ii",
+                    variant_count = 0
+                }
+            end
+            grouped_items["Moglophone II"].variant_count = grouped_items["Moglophone II"].variant_count + 1
+        else
+            -- Regular items
+            table.insert(items, {
+                id = id,
+                name = data.name,
+                cooldown = data.cooldown
+            })
+        end
+    end
+    
+    -- Add grouped items
+    for _, grouped_item in pairs(grouped_items) do
+        table.insert(items, grouped_item)
     end
     
     -- Sort by name for consistent display
