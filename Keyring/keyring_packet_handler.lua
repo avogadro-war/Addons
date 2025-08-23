@@ -296,6 +296,19 @@ function handler.initialize_player(server_id)
     request_currency_data()
     canteen_requested = true
     
+    -- Try to get current zone from memory manager if available
+    local mem = AshitaCore:GetMemoryManager()
+    if mem then
+        local player = mem:GetPlayer()
+        if player then
+            local zone_id = player:GetZoneId()
+            if zone_id and zone_id > 0 then
+                current_zone = zone_id
+                debug_print('Initial zone set from memory manager: ' .. current_zone)
+            end
+        end
+    end
+    
     debug_print('Initialization complete - waiting for 0x55 packet for key item data')
 end
 
@@ -347,6 +360,19 @@ function handler.force_initialization()
     debug_print('Requesting canteen data after force initialization')
     request_currency_data()
     canteen_requested = true
+    
+    -- Try to get current zone from memory manager if available
+    local mem = AshitaCore:GetMemoryManager()
+    if mem then
+        local player = mem:GetPlayer()
+        if player then
+            local zone_id = player:GetZoneId()
+            if zone_id and zone_id > 0 then
+                current_zone = zone_id
+                debug_print('Initial zone set from memory manager: ' .. current_zone)
+            end
+        end
+    end
     
     debug_print('Force initialization complete')
 end
@@ -698,6 +724,29 @@ end
 
 -- PACKET HANDLERS
 
+-- Handle zone change packets (0x0A)
+ashita.events.register('packet_in', 'Keyring_ZoneChange', function(e)
+    if e.id == 0x0A then
+        local zoneId = struct.unpack('H', e.data, 0x04 + 1)
+        if zoneId and zoneId > 0 then
+            if current_zone ~= nil then
+                previous_zone = current_zone
+            end
+            current_zone = zoneId
+            
+            -- Process if this is the first zone OR if zone actually changed
+            if previous_zone == nil or previous_zone ~= current_zone then
+                debug_print('Zone changed from ' .. (previous_zone or 'unknown') .. ' to ' .. (current_zone or 'unknown'))
+                
+                -- Trigger zone change callback if registered
+                if zone_callback then
+                    pcall(zone_callback, current_zone, previous_zone)
+                end
+            end
+        end
+    end
+end)
+
 -- Handle 0x55 packets (key item list)
 ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
     -- Basic debug: log all incoming packets
@@ -961,7 +1010,7 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
         
         -- Process if this is the first zone OR if zone actually changed
         if previous_zone == nil or previous_zone ~= current_zone then
-            debug_print('Zone changed from ' .. (previous_zone or 'unknown') .. ' to ' .. current_zone)
+                            debug_print('Zone changed from ' .. (previous_zone or 'unknown') .. ' to ' .. (current_zone or 'unknown'))
             
             -- Trigger zone change callback if registered
             if zone_callback then
@@ -1136,7 +1185,7 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                     save_state()
                 end
                 
-                debug_print('0x02A: Hourglass time processed in pre-Dynamis zone ' .. current_zone)
+                debug_print('0x02A: Hourglass time processed in pre-Dynamis zone ' .. (current_zone or 'unknown'))
             end
         end
         
@@ -1169,12 +1218,12 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                 pcall(gui_update_callback)
             end
             
-            debug_print('0x02A: Ruspix Plate time processed in Outer Ra\'Kaznar zone ' .. current_zone)
+            debug_print('0x02A: Ruspix Plate time processed in Outer Ra\'Kaznar zone ' .. (current_zone or 'unknown'))
         end
         
         -- Debug output for zones where neither processing applies
         if not is_in_pre_dynamis and not is_in_outer_rakaznar then
-            debug_print('0x02A: Packet received in zone ' .. current_zone .. ' - no processing needed for this zone')
+            debug_print('0x02A: Packet received in zone ' .. (current_zone or 'unknown') .. ' - no processing needed for this zone')
         end
         
     elseif e.id == 0x118 then
