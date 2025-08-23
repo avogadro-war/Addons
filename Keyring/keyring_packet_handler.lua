@@ -301,12 +301,18 @@ function handler.initialize_player(server_id)
     if mem then
         local player = mem:GetPlayer()
         if player then
-            local zone_id = player:GetZoneId()
-            if zone_id and zone_id > 0 then
+            local success, zone_id = pcall(function() return player:GetZoneId() end)
+            if success and zone_id and zone_id > 0 then
                 current_zone = zone_id
                 debug_print('Initial zone set from memory manager: ' .. current_zone)
+            else
+                debug_print('Could not get zone ID from memory manager (zone_id=' .. tostring(zone_id) .. ')')
             end
+        else
+            debug_print('Player object not available from memory manager during initialization')
         end
+    else
+        debug_print('Memory manager not available during initialization')
     end
     
     debug_print('Initialization complete - waiting for 0x55 packet for key item data')
@@ -366,12 +372,18 @@ function handler.force_initialization()
     if mem then
         local player = mem:GetPlayer()
         if player then
-            local zone_id = player:GetZoneId()
-            if zone_id and zone_id > 0 then
+            local success, zone_id = pcall(function() return player:GetZoneId() end)
+            if success and zone_id and zone_id > 0 then
                 current_zone = zone_id
                 debug_print('Initial zone set from memory manager: ' .. current_zone)
+            else
+                debug_print('Could not get zone ID from memory manager (zone_id=' .. tostring(zone_id) .. ')')
             end
+        else
+            debug_print('Player object not available from memory manager during initialization')
         end
+    else
+        debug_print('Memory manager not available during initialization')
     end
     
     debug_print('Force initialization complete')
