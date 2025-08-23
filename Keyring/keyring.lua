@@ -1,6 +1,6 @@
 addon.author   = 'Avogadro, assistance from Thorny and Will'
 addon.name     = 'Keyring'
-addon.version  = '0.4.2'
+addon.version  = '0.4.3'
 
 require('common')
 local chat = require('chat')

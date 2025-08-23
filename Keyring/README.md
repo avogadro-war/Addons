@@ -1,132 +1,119 @@
-# FFXINA Addons Repository
+# Keyring Addon
 
-A centralized repository for managing multiple FFXINA addons with selective tracking and organized releases.
+A Final Fantasy XI addon for Ashita4 that tracks key item cooldowns and provides real-time monitoring of important game items.
 
-## Repository Structure
+## Features
 
-This repository is designed to manage multiple addons in one place while allowing selective tracking of specific addons. The structure is:
+- **Automatic Key Item Detection**: Monitors key item acquisition and loss via packet analysis
+- **Real-time Cooldown Tracking**: Tracks cooldowns for items like Moglophone, Shiny Ra'Kaznarian Plate, and Mystical Canteen
+- **Dynamic Hourglass Tracking**: Monitors Empty Hourglass time with automatic accrual calculations
+- **Ruspix Plate Integration**: Tracks Ruspix Plate time accumulation and usage
+- **Dynamis [D] Monitoring**: Automatic detection of Dynamis [D] entries with cooldown tracking
+- **Interactive GUI**: Real-time display with countdown timers and status indicators
+- **Persistent State**: Maintains tracking data across game sessions
+- **Smart Notifications**: Zone-change alerts for available key items
 
-```
-addons/
-├── Keyring/           # Keyring addon (always tracked)
-├── autohaste/         # Autohaste addon (selectively tracked)
-├── simplelog/         # Simplelog addon (selectively tracked)
-├── react/             # React addon (selectively tracked)
-├── [other addons]/    # Various other addons
-└── .gitignore         # Selective tracking configuration
-```
+## Tracked Items
+
+### Primary Cooldown Items
+- **Moglophone** (ID: 3212) - 20-hour cooldown
+- **Shiny Ra'Kaznarian Plate** (ID: 3300) - 20-hour cooldown (starts when used for teleport)
+- **Mystical Canteen** (ID: 3137) - 20-hour generation cycle
+
+### Special Tracking
+- **Empty Hourglass** - Time value with automatic accrual (1 second per 5 seconds elapsed)
+- **Dynamis [D] Entry** - 60-hour cooldown with automatic detection
+- **Ruspix Plate** - Time accumulator for bypassing Shiny Plate cooldown
+
+### Other Key Items
+- **Ownership tracking** for all tracked key items (no cooldowns)
+- **Automatic state updates** via packet analysis
+
+## Commands
+
+### Basic Commands
+- `/keyring [gui]` - Toggle the GUI window
+- `/keyring check` - Check for available key items
+- `/keyring status` - Show addon status and cooldown information
+- `/keyring notify` - Toggle zone change notifications
+
+### Utility Commands
+- `/keyring manage` - Open item management GUI
+- `/keyring additem` - Open item management GUI with Add Item dialog
+- `/keyring fix <item>` - Manually trigger acquisition for missed packets
+- `/keyring hourglass <seconds>` - Manually set hourglass time
+- `/keyring reset_hourglass` - Reset hourglass time to 0
+
+### Debug Commands
+- `/keyring debug` - Toggle debug messages in chat
+- `/keyring memory` - Show current memory usage
+- `/keyring debug_item <item>` - Debug specific item state
+
+## Installation
+
+1. **Download** the Keyring addon folder
+2. **Place** it in your Ashita4 `addons/` directory
+3. **Load** the addon in-game with `/addon load keyring`
+4. **Access** the GUI with `/keyring gui`
 
 ## How It Works
 
-### Selective Addon Tracking
-- **All addons are excluded by default** in `.gitignore`
-- **Specific addons are selectively tracked** by uncommenting them in `.gitignore`
-- **Keyring addon is always tracked** as the primary addon
+### Packet Analysis
+- **0x55 packets**: Key item ownership changes
+- **0x0A packets**: Zone change detection
+- **0x02A packets**: Hourglass and Ruspix Plate time data
+- **0x05B/0x05C packets**: Ruspix Plate queries and responses
+- **0x118 packets**: Canteen storage updates
 
-### Adding New Addons to Track
-1. **Uncomment the addon line** in `.gitignore`:
-   ```gitignore
-   # !autohaste/     # Commented = not tracked
-   !autohaste/        # Uncommented = tracked
-   ```
+### State Management
+- **Automatic persistence** across game sessions
+- **Real-time updates** via packet monitoring
+- **Smart cooldown calculations** with accrual tracking
+- **Zone-based processing** for different packet types
 
-2. **Add the addon folder** to git:
-   ```bash
-   git add autohaste/
-   git commit -m "Add autohaste addon"
-   git push origin master
-   ```
+### GUI Features
+- **Real-time countdown timers**
+- **Color-coded status indicators**
+- **Hover tooltips** with detailed information
+- **Automatic refresh** on state changes
 
-### Removing Addons from Tracking
-1. **Comment out the addon line** in `.gitignore`:
-   ```gitignore
-   !autohaste/        # Uncommented = tracked
-   # !autohaste/     # Commented = not tracked
-   ```
+## Technical Details
 
-2. **Remove the addon from git** (but keep local files):
-   ```bash
-   git rm -r --cached autohaste/
-   git commit -m "Remove autohaste addon from tracking"
-   git push origin master
-   ```
+### Dependencies
+- **Ashita4 Framework**
+- **ImGui** for GUI rendering
+- **Lua 5.1+** compatibility
 
-## Currently Tracked Addons
+### Architecture
+- **Packet Handler**: Processes all incoming/outgoing packets
+- **Persistence Layer**: Manages state saving/loading
+- **GUI System**: Real-time display and user interaction
+- **State Management**: Centralized data handling
 
-### Keyring Addon
-- **Status**: Always tracked
-- **Description**: FFXI Key Item Cooldown Tracker
-- **Version**: v0.4.3
-- **Features**: Automatic detection, real-time tracking, GUI interface
-- **Repository**: [Keyring Addon](https://github.com/avogadro-war/Keyring)
+### Performance
+- **Efficient packet processing** with minimal overhead
+- **Smart update throttling** to prevent spam
+- **Memory-conscious** state management
+- **Optimized GUI rendering**
 
-## Available Addons (Not Currently Tracked)
+## Version History
 
-The following addons are available in the repository but not currently tracked by git:
-
-- **autohaste/** - Auto-haste management
-- **simplelog/** - Simple logging system
-- **react/** - Reaction-based automation
-- **cpredeem/** - CP redemption system
-- **sparks/** - Sparks management
-- **HXUI/** - HXUI interface
-- **EnemyBuffs/** - Enemy buff monitoring
-- **customHUD/** - Custom HUD system
-- **libs/** - Shared libraries
-- **And many more...**
-
-## Development Workflow
-
-### For Keyring Development
-```bash
-# Make changes to Keyring/ files
-git add Keyring/
-git commit -m "Update Keyring addon"
-git push origin master
-```
-
-### For Adding New Addons
-```bash
-# 1. Uncomment addon in .gitignore
-# 2. Add the addon folder
-git add newaddon/
-git commit -m "Add newaddon addon"
-git push origin master
-```
-
-### For Releases
-```bash
-# Create a release branch with organized structure
-git checkout -b release-v1.0.0
-git push origin release-v1.0.0
-```
-
-## Benefits of This Structure
-
-1. **Centralized Management**: All addons in one repository
-2. **Selective Tracking**: Choose which addons to version control
-3. **Organized Releases**: Create structured releases with specific addon combinations
-4. **Easy Collaboration**: Contributors can work on multiple addons in one place
-5. **Flexible Deployment**: Deploy specific addon combinations as needed
-
-## Contributing
-
-1. **Fork the repository**
-2. **Create a feature branch** for your changes
-3. **Make your changes** to the relevant addon(s)
-4. **Update .gitignore** if adding/removing addons
-5. **Submit a pull request**
-
-## License
-
-This repository contains multiple addons with their respective licenses. See individual addon folders for specific license information.
+- **v0.4.3** - Fixed duplicate zone change handlers, improved packet processing
+- **v0.4.2** - Enhanced Ruspix Plate integration, improved cooldown tracking
+- **v0.4.1** - Added notification system, improved GUI
+- **v0.4.0** - Major rewrite with new architecture
+- **v0.3.x** - Legacy versions
 
 ## Support
 
-- **Keyring Addon**: [Keyring Repository](https://github.com/avogadro-war/Keyring)
-- **General Addons**: [Addons Repository](https://github.com/avogadro-war/Addons)
+For issues, questions, or contributions:
+- **Repository**: [Keyring Addon](https://github.com/avogadro-war/Keyring)
 - **FFXINA**: [FFXINA Project](https://github.com/FFXINA)
+
+## License
+
+This addon is provided under the MIT License. See LICENSE file for details.
 
 ---
 
-**Note**: This repository structure allows you to maintain a clean development environment while providing organized releases for users. Users can download specific addon combinations or the entire repository as needed. 
+**Note**: This addon automatically detects and tracks key item events. No manual configuration is required for basic functionality. 
