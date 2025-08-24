@@ -7,7 +7,7 @@ A Final Fantasy XI addon for Ashita4 that tracks key item cooldowns and provides
 - **Automatic Key Item Detection**: Monitors key item acquisition and loss via packet analysis
 - **Real-time Cooldown Tracking**: Tracks cooldowns for items like Moglophone, Shiny Ra'Kaznarian Plate, and Mystical Canteen
 - **Dynamic Hourglass Tracking**: Monitors Empty Hourglass time with automatic accrual calculations
-- **Ruspix Plate Integration**: Tracks Ruspix Plate time accumulation and usage
+- **Ruspix Plate Integration**: Tracks Ruspix Plate time with real-time packet data and dynamic "Ready" status
 - **Dynamis [D] Monitoring**: Automatic detection of Dynamis [D] entries with cooldown tracking
 - **Interactive GUI**: Real-time display with countdown timers and status indicators
 - **Persistent State**: Maintains tracking data across game sessions
@@ -23,7 +23,7 @@ A Final Fantasy XI addon for Ashita4 that tracks key item cooldowns and provides
 ### Special Tracking
 - **Empty Hourglass** - Time value with automatic accrual (1 second per 5 seconds elapsed)
 - **Dynamis [D] Entry** - 60-hour cooldown with automatic detection
-- **Ruspix Plate** - Time accumulator for bypassing Shiny Plate cooldown
+- **Ruspix Plate** - Real-time time tracking with dynamic "Ready" status based on Shiny Plate cooldown
 
 ### Other Key Items
 - **Ownership tracking** for all tracked key items (no cooldowns)
@@ -61,14 +61,14 @@ A Final Fantasy XI addon for Ashita4 that tracks key item cooldowns and provides
 ### Packet Analysis
 - **0x55 packets**: Key item ownership changes
 - **0x0A packets**: Zone change detection
-- **0x02A packets**: Hourglass and Ruspix Plate time data
+- **0x02A packets**: Hourglass and Ruspix Plate time data (improved offset handling)
 - **0x05B/0x05C packets**: Ruspix Plate queries and responses
 - **0x118 packets**: Canteen storage updates
 
 ### State Management
 - **Automatic persistence** across game sessions
 - **Real-time updates** via packet monitoring
-- **Smart cooldown calculations** with accrual tracking
+- **Smart cooldown calculations** with accrual tracking and real-time server data updates
 - **Zone-based processing** for different packet types
 
 ### GUI Features
@@ -98,6 +98,7 @@ A Final Fantasy XI addon for Ashita4 that tracks key item cooldowns and provides
 
 ## Version History
 
+- **v0.4.4** - Fixed Ruspix Plate time calculations, improved 0x02A packet handling, enhanced GUI "Ready" logic
 - **v0.4.3** - Fixed duplicate zone change handlers, improved packet processing
 - **v0.4.2** - Enhanced Ruspix Plate integration, improved cooldown tracking
 - **v0.4.1** - Added notification system, improved GUI

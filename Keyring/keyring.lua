@@ -26,12 +26,19 @@ packet_tracker.set_currency_callback(function(canteens)
 end)
 
 -- Set up GUI update callback to refresh display when persistence data is loaded
+local last_gui_update = 0
+local gui_update_throttle = 5.0  -- Only allow GUI updates every 5 seconds
+
 packet_tracker.set_gui_update_callback(function()
-    -- Force GUI refresh by toggling visibility (this triggers a redraw)
-    local was_visible = gui.is_visible()
-    if was_visible then
-        gui.set_visible(false)
-        gui.set_visible(true)
+    local now = os.clock()
+    if now - last_gui_update >= gui_update_throttle then
+        last_gui_update = now
+        -- Force GUI refresh by toggling visibility (this triggers a redraw)
+        local was_visible = gui.is_visible()
+        if was_visible then
+            gui.set_visible(false)
+            gui.set_visible(true)
+        end
     end
 end)
 
@@ -141,7 +148,7 @@ ashita.events.register('command', 'command_cb', function(e)
 
     -- Help command
     if args[2] == 'help' then
-        print(chat.header('Keyring'):append(chat.message('Keyring Addon v0.4.2 - Key Item Cooldown Tracker')))
+        print(chat.header('Keyring'):append(chat.message('Keyring Addon v0.4.4 - Key Item Cooldown Tracker')))
         print(chat.message(''))
         print(chat.message('== TRACKED KEY ITEMS =='))
         print(chat.message('  • Moglophone (20h cooldown) - Acquired when obtained'))
@@ -149,6 +156,7 @@ ashita.events.register('command', 'command_cb', function(e)
         print(chat.message('  • Shiny Ra\'Kaznarian Plate (20h cooldown) - Cooldown starts when used for teleport'))
         print(chat.message('  • Dynamis [D] Entry (60h cooldown) - Auto-detected on zone entry'))
         print(chat.message('  • Empty Hourglass - Time value tracked via NPC interactions'))
+        print(chat.message('  • Ruspix Plate - Real-time time tracking with dynamic "Ready" status'))
         print(chat.message('  • Other key items - Ownership tracking (no cooldowns)'))
         print(chat.message(''))
         print(chat.message('== NOTIFICATION ITEMS =='))
@@ -189,6 +197,8 @@ ashita.events.register('command', 'command_cb', function(e)
         print(chat.message('  • Smart cooldown handling per item type'))
         print(chat.message('  • Zone-based automatic Dynamis [D] and Ra\'Kaznar detection'))
         print(chat.message('  • Empty Hourglass time tracking and status display'))
+        print(chat.message('  • Enhanced packet handling for improved accuracy'))
+        print(chat.message('  • Dynamic Ruspix Plate "Ready" status based on Shiny Plate cooldown'))
         return true
     end
 

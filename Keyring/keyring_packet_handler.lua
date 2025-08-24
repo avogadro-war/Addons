@@ -13,10 +13,22 @@ local chat = require('chat')
 -- Debug flag - set to true to enable debug output
 local debugMode = false  -- Debug mode disabled
 
--- Simple debug function
+-- Debug throttling to prevent spam
+local last_debug_messages = {}
+local debug_throttle = 5.0  -- Only show same debug message every 5 seconds
+
+-- Simple debug function with throttling
 local function debug_print(message)
     if debugMode then
-        print('[Keyring Debug] ' .. tostring(message))
+        -- Create a hash for the message to throttle duplicates
+        local message_hash = tostring(message)
+        local now = os.clock()
+        
+        -- Check if we should show this message
+        if not last_debug_messages[message_hash] or (now - last_debug_messages[message_hash]) >= debug_throttle then
+            last_debug_messages[message_hash] = now
+            print('[Keyring Debug] ' .. tostring(message))
+        end
     end
 end
 
@@ -54,6 +66,21 @@ local currency_callback = nil
 
 -- GUI update callback
 local gui_update_callback = nil
+
+-- GUI update throttling
+local last_gui_update_call = 0
+local gui_update_throttle = 5.0  -- Only allow GUI updates every 5 seconds
+
+-- Throttled GUI update function
+local function throttled_gui_update()
+    local now = os.clock()
+    if now - last_gui_update_call >= gui_update_throttle then
+        last_gui_update_call = now
+        if gui_update_callback then
+            pcall(gui_update_callback)
+        end
+    end
+end
 
 -- Flag to track if we've already requested canteen data after login/reload
 local canteen_requested = false
@@ -255,10 +282,8 @@ function handler.initialize_player(server_id)
         
 
         
-        -- Trigger GUI update callback to refresh display with loaded data
-        if gui_update_callback then
-            pcall(gui_update_callback)
-        end
+        -- Trigger throttled GUI update callback to refresh display with loaded data
+        throttled_gui_update()
     else
         debug_print('No persistence file found, starting fresh')
     end
@@ -326,10 +351,8 @@ function handler.force_initialization()
         set_state(loaded_state)
         debug_print('Persistence loaded successfully')
         
-        -- Trigger GUI update callback to refresh display with loaded data
-        if gui_update_callback then
-            pcall(gui_update_callback)
-        end
+        -- Trigger throttled GUI update callback to refresh display with loaded data
+        throttled_gui_update()
     else
         debug_print('No persistence file found, starting fresh')
     end
@@ -829,10 +852,8 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                     
                     local save_result = save_state()
                     
-                    -- Trigger GUI update callback to refresh display
-                    if gui_update_callback then
-                        pcall(gui_update_callback)
-                    end
+                    -- Trigger throttled GUI update callback to refresh display
+                    throttled_gui_update()
                 end
             else
                 -- Debug output for items not in current packet range
@@ -902,6 +923,17 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                 -- Status 3: On cooldown - extract time value from 0x08+1 offset
                 local shiny_plate_remaining = struct.unpack('H', e.data, 0x08+1)
                 debug_print('0x05C: Status 3 - Shiny Ra\'Kaznarian Plate remaining cooldown: ' .. shiny_plate_remaining .. ' seconds')
+                
+                -- Calculate when the cooldown started using the fresh server data
+                local current_time = os.time()
+                local total_cooldown = 72000  -- 20 hours
+                local cooldown_start = current_time - (total_cooldown - shiny_plate_remaining)
+                
+                -- Update the Shiny Plate cooldown start timestamp (same field used by 0x55 handler)
+                current_state.timestamps[3300] = cooldown_start
+                save_state()
+                
+                debug_print('0x05C: Shiny Plate cooldown start updated to: ' .. cooldown_start .. ' (remaining: ' .. shiny_plate_remaining .. ' seconds)')
             else
                 -- Status 1: Junk - already have a Shiny Ra'Kaznarian Plate
                 debug_print('0x05C: Status 1 - Already have Shiny Ra\'Kaznarian Plate (junk data)')
@@ -913,10 +945,8 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
             -- Reset the validation flag after successful processing
             shiny_plate_05b_sent = false
             
-            -- Trigger GUI update callback to refresh display
-            if gui_update_callback then
-                pcall(gui_update_callback)
-            end
+            -- Trigger throttled GUI update callback to refresh display
+            throttled_gui_update()
             
             return
         end
@@ -934,11 +964,14 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                 local ruspix_plate_remaining = struct.unpack('H', e.data, 0x08+1)
                 debug_print('0x05C: Status 3 - Ruspix Plate remaining cooldown: ' .. ruspix_plate_remaining .. ' seconds')
                 
-                -- Calculate Ruspix Plate time: Shiny Plate cooldown - remaining cooldown
-                local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
-                local calculated_ruspix_time = shiny_plate_cooldown - ruspix_plate_remaining
+                -- Get Shiny Ra'Kaznarian Plate's current remaining cooldown
+                local shiny_plate_remaining = handler.get_remaining(3300)  -- 3300 = Shiny Ra'Kaznarian Plate ID
                 
-                debug_print('0x05C: Calculated Ruspix Plate time: ' .. calculated_ruspix_time .. ' seconds (cooldown: ' .. shiny_plate_cooldown .. ' - remaining: ' .. ruspix_plate_remaining .. ')')
+                -- Calculate Ruspix Plate time: Shiny Plate remaining cooldown - 0x05C value
+                local calculated_ruspix_time = shiny_plate_remaining - ruspix_plate_remaining
+                
+                debug_print('0x05C: Shiny Plate remaining: ' .. shiny_plate_remaining .. ' seconds, 0x05C value: ' .. ruspix_plate_remaining .. ' seconds')
+                debug_print('0x05C: Calculated Ruspix Plate time: ' .. calculated_ruspix_time .. ' seconds (Shiny Plate remaining: ' .. shiny_plate_remaining .. ' - 0x05C value: ' .. ruspix_plate_remaining .. ')')
                 
                 -- Cap Ruspix Plate time at 20 hours (72000 seconds)
                 local max_ruspix_time = 72000
@@ -967,10 +1000,8 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
             -- Reset the validation flag after successful processing
             ruspix_plate_05b_sent = false
             
-            -- Trigger GUI update callback to refresh display
-            if gui_update_callback then
-                pcall(gui_update_callback)
-            end
+            -- Trigger throttled GUI update callback to refresh display
+            throttled_gui_update()
             
             return
         end
@@ -1176,20 +1207,22 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
         
         -- Process Ruspix Plate data only in Outer Ra'Kaznar zones
         if is_in_outer_rakaznar and #e.data >= 0x1C then  -- Need at least 28 bytes for offset 0x18-0x1B
-            local ruspix_time = struct.unpack('I', e.data, 0x18+1)  -- 32-bit at offset 0x18-0x1B
+            local ruspix_plate_time = struct.unpack('I', e.data, 0x18+1)  -- 32-bit at offset 0x18-0x1B
             
             local current_state = get_state()
             
+            debug_print('0x02A: Direct Ruspix Plate time from packet: ' .. ruspix_plate_time .. ' seconds')
+            
             -- Cap Ruspix Plate time at 20 hours (72000 seconds)
             local max_ruspix_time = 72000
-            local capped_ruspix_time = math.min(ruspix_time, max_ruspix_time)
+            local capped_ruspix_time = math.min(ruspix_plate_time, max_ruspix_time)
             
             -- Update the packet time (same variable used by 0x05C)
             current_state.packet_ruspix_time = capped_ruspix_time
             current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
             
-            if ruspix_time > max_ruspix_time then
-                debug_print('0x02A: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. ruspix_time .. ' seconds), accrual reset to 0')
+            if ruspix_plate_time > max_ruspix_time then
+                debug_print('0x02A: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. ruspix_plate_time .. ' seconds), accrual reset to 0')
             else
                 debug_print('0x02A: Ruspix Plate time updated from packet: ' .. capped_ruspix_time .. ' seconds, accrual reset to 0')
             end
@@ -1197,10 +1230,8 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
             -- Save state after Ruspix Plate update
             save_state()
             
-            -- Trigger GUI update callback to refresh display
-            if gui_update_callback then
-                pcall(gui_update_callback)
-            end
+            -- Trigger throttled GUI update callback to refresh display
+            throttled_gui_update()
             
             debug_print('0x02A: Ruspix Plate time processed in Outer Ra\'Kaznar zone ' .. (current_zone or 'unknown'))
         end

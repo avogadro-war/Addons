@@ -704,19 +704,19 @@ local function render_ruspix_plate_section(packet_tracker, total_width)
         imgui.SetCursorPosX(pos_x)
         imgui.TextColored(text_color, display_text)
     else
-        -- Calculate if Ruspix Plate is ready (total time >= 72000)
+        -- Calculate if Ruspix Plate is ready (time >= Shiny Plate remaining cooldown)
         local display_text
         local text_color
         
-        -- Get Shiny Rakaznarian Plate cooldown from tracked items
-        local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
+        -- Get Shiny Ra'Kaznarian Plate's current remaining cooldown
+        local shiny_plate_remaining = packet_tracker and packet_tracker.get_remaining and packet_tracker.get_remaining(3300) or 0
         
-        if ruspix_time >= shiny_plate_cooldown then
-            -- Case 1: Total time >= Shiny Rakaznarian Plate cooldown → "Ready" in green
+        if ruspix_time >= shiny_plate_remaining then
+            -- Case 1: Ruspix Plate time >= Shiny Plate remaining cooldown → "Ready" in green
             display_text = 'Ready'
             text_color = {0.2, 1, 0.2, 1} -- Green
         else
-            -- Case 2: Total time < Shiny Rakaznarian Plate cooldown → "On cooldown." in red
+            -- Case 2: Ruspix Plate time < Shiny Plate remaining cooldown → "On cooldown." in red
             display_text = 'On cooldown.'
             text_color = {1, 0.2, 0.2, 1} -- Red
         end
@@ -785,8 +785,8 @@ local function render_ruspix_plate_section(packet_tracker, total_width)
         imgui.Text('• Time is obtained from talking to Ruspix NPC')
         imgui.Text('• Time automatically increases by 1 second every 5 seconds')
         imgui.Text('• Accrual occurs when Shiny Rakaznarian Plate is off cooldown')
-        imgui.Text('• Green "Ready": Total time >= 72000 seconds (20 hours)')
-        imgui.Text('• Red "Time remaining": Not enough time to reach 72000 seconds')
+        imgui.Text('• Green "Ready": Ruspix Plate time >= Shiny Plate remaining cooldown')
+        imgui.Text('• Red "On cooldown": Ruspix Plate time < Shiny Plate remaining cooldown')
         if ruspix_time ~= 0 and ruspix_time ~= nil then
             imgui.Text('• Total time: ' .. ruspix_time .. ' seconds')
             if packet_ruspix_time and packet_ruspix_time > 0 then
