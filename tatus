@@ -1,5 +1,0 @@
-[33mca4ba97[m[33m ([m[1;36mHEAD -> [m[1;32mmaster[m[33m)[m Implement Moglophone II variant grouping and persistence cleanup
-[33m43c992a[m File pruning.
-[33m21a4e10[m Remove loose Keyring files from root - keep only organized folder structure
-[33m430e81b[m Add onevent2 addon to tracking
-[33m6be53ce[m Restructure repository: addons folder as main repo with selective addon tracking
