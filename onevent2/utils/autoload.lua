@@ -15,6 +15,7 @@ local autoload = {
 
 local packethandler = require('utils.packethandler')
 local known_zones   = require('config.known').zones
+
 ------------------------------------------------------------
 -- Debug log (only if debug enabled in main addon)
 local function debug_log(msg, addon_name)
@@ -27,22 +28,26 @@ end
 ------------------------------------------------------------
 -- Zone auto-load
 ------------------------------------------------------------
-packethandler.onZoneChange:register(function(zoneId)
-    if zoneId == autoload.last_zoneid then return end
-    autoload.last_zoneid = zoneId
-    if known_zones and known_zones[zoneId] then
-        local zoneName = known_zones[zoneId]
-        local fname = zoneName:lower():gsub(' ', '_')
-        if autoload.load_zone_triggers then
-            autoload.load_zone_triggers(fname)
-            debug_log(('Loaded zone triggers: %s'):format(fname))
-        else
-            debug_log('Warning: load_zone_triggers function not set in autoload.lua')
+local function register_zone_change_handler()
+    packethandler.onZoneChange:register(function(zoneId)
+        if zoneId == autoload.last_zoneid then 
+            return 
         end
-    else
-        debug_log(('Zone %d entered; no known triggers configured'):format(zoneId))
-    end
-end)
+        autoload.last_zoneid = zoneId
+        
+        if known_zones and known_zones[zoneId] then
+            local zoneName = known_zones[zoneId]
+            local fname = zoneName:lower():gsub(' ', '_')
+            
+            if autoload.load_zone_triggers then
+                autoload.load_zone_triggers(fname)
+                print(('[onevent2][INFO] Zone triggers loaded: %s'):format(fname))
+            else
+                print('[onevent2][WARN] load_zone_triggers function not set')
+            end
+        end
+    end)
+end
 ------------------------------------------------------------
 -- Main periodic check: job + boss auto-load
 ------------------------------------------------------------
@@ -113,6 +118,10 @@ end
 
 function autoload.set_zone_trigger_loader(func)
     autoload.load_zone_triggers = func
+end
+
+function autoload.start()
+    register_zone_change_handler()
 end
 
 return autoload

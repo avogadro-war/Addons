@@ -36,15 +36,18 @@ end
 local state = {
     dynamis_d_entry_time = 0,
     dynamis_projected_ready_time = 0,
-    hourglass_accumulated_time = 0,
     hourglass_packet_timestamp = 0,
     hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
     key_items = {},
-    last_canteen_time = 0,
     packet_ruspix_time = 0,  -- Ruspix Plate timer from packet data
-    ruspix_accumulated_time = 0,  -- Accumulated time for Ruspix Plate accrual
     storage_canteens = 0,
     timestamps = {},
+    -- Smart cooldown management
+    canteen_cooldown_state = 'idle', -- 'idle', 'running', 'ready'
+    canteen_cooldown_start_time = 0,
+    -- Batch state updates
+    is_dirty = false,
+    last_save_time = 0,
 }
 
 -- Initialization tracking
@@ -67,19 +70,11 @@ local currency_callback = nil
 -- GUI update callback
 local gui_update_callback = nil
 
--- GUI update throttling
-local last_gui_update_call = 0
-local gui_update_throttle = 5.0  -- Only allow GUI updates every 5 seconds
+-- GUI update throttling (now handled by handler.throttled_gui_update)
 
--- Throttled GUI update function
+-- Throttled GUI update function (now uses handler.throttled_gui_update)
 local function throttled_gui_update()
-    local now = os.clock()
-    if now - last_gui_update_call >= gui_update_throttle then
-        last_gui_update_call = now
-        if gui_update_callback then
-            pcall(gui_update_callback)
-        end
-    end
+    handler.throttled_gui_update()
 end
 
 -- Flag to track if we've already requested canteen data after login/reload
@@ -94,7 +89,48 @@ local shiny_plate_05b_sent = false
 -- Flag to track if we've sent a 0x05B packet requesting Ruspix Plate time
 local ruspix_plate_05b_sent = false
 
+-- Get current state (defined early for use by other functions)
+local function get_state()
+    return state
+end
+
 -- Notification cooldown removed - no longer needed after fixing duplicate zone handlers
+
+-- Smart cooldown management function
+local function handle_canteen_cooldown(previous_count, new_count)
+    local current_state = get_state()
+    if not current_state then return end
+    
+    debug_print('Smart cooldown: previous=' .. previous_count .. ', new=' .. new_count .. ', current_state=' .. current_state.canteen_cooldown_state)
+    
+    if previous_count == 3 and new_count == 2 then
+        -- Storage decreased from 3 to 2 - start cooldown if not already running
+        if current_state.canteen_cooldown_state == 'idle' then
+            current_state.canteen_cooldown_state = 'running'
+            current_state.canteen_cooldown_start_time = os.time()
+            
+            local canteen_cooldown = trackedKeyItems and trackedKeyItems[3137] and trackedKeyItems[3137].cooldown or 72000
+            local hours = math.floor(canteen_cooldown / 3600)
+            print(chat.header('Keyring'):append(chat.message('Canteen cooldown started - next canteen in ' .. hours .. ' hours')))
+            debug_print('Smart cooldown: Started cooldown from 3→2')
+        else
+            debug_print('Smart cooldown: Cooldown already running, not starting new one')
+        end
+    elseif new_count == 3 then
+        -- Storage is full - stop cooldown
+        if current_state.canteen_cooldown_state == 'running' then
+            current_state.canteen_cooldown_state = 'idle'
+            current_state.canteen_cooldown_start_time = 0
+            debug_print('Smart cooldown: Stopped cooldown - storage full')
+        end
+    elseif new_count == 0 then
+        -- Storage empty - mark as ready for generation
+        if current_state.canteen_cooldown_state == 'running' then
+            current_state.canteen_cooldown_state = 'ready'
+            debug_print('Smart cooldown: Marked as ready for generation')
+        end
+    end
+end
 
 -- Request Storage Slip Canteen info (outgoing packet 0x115)
 local function request_currency_data()
@@ -102,6 +138,8 @@ local function request_currency_data()
     AshitaCore:GetPacketManager():AddOutgoingPacket(0x115, packet)
     debug_print('Sent 0x115 currency request packet')
 end
+
+-- Simple state saving (no dirty state system)
 
 -- Load state from persistence
 local function load_state()
@@ -112,15 +150,15 @@ local function load_state()
         local new_state = {
             dynamis_d_entry_time = tonumber(loaded_state.dynamis_d_entry_time) or 0,
             dynamis_projected_ready_time = tonumber(loaded_state.dynamis_projected_ready_time) or 0,
-            hourglass_accumulated_time = tonumber(loaded_state.hourglass_accumulated_time) or 0,
             hourglass_packet_timestamp = tonumber(loaded_state.hourglass_packet_timestamp) or 0,
             hourglass_time = tonumber(loaded_state.hourglass_time) or -1,  -- -1 represents "Unknown" until packet value is received
             key_items = {},
-            last_canteen_time = tonumber(loaded_state.last_canteen_time) or 0,
             packet_ruspix_time = tonumber(loaded_state.packet_ruspix_time) or 0,
-            ruspix_accumulated_time = tonumber(loaded_state.ruspix_accumulated_time) or 0,
             storage_canteens = tonumber(loaded_state.storage_canteens) or 0,
             timestamps = {},
+            -- Smart cooldown management
+            canteen_cooldown_state = loaded_state.canteen_cooldown_state or 'idle',
+            canteen_cooldown_start_time = tonumber(loaded_state.canteen_cooldown_start_time) or 0,
         }
         
         -- Deep copy key_items
@@ -143,89 +181,13 @@ local function load_state()
     return loaded_state
 end
 
--- Get current state
-local function get_state()
-    return state
-end
+-- Get current state (already defined above)
 
--- Calculate and update accumulated hourglass time
-local function update_accumulated_hourglass_time()
-    local current_state = get_state()
-    if not current_state then
-        return
-    end
-    
-    -- Only accumulate when Dynamis D entry time is recorded and 60 hours have passed
-    if current_state.dynamis_d_entry_time and current_state.dynamis_d_entry_time > 0 then
-        local now = os.time()
-        local dynamis_entry_time = current_state.dynamis_d_entry_time
-        local dynamis_ready_time = dynamis_entry_time + 216000 -- 60 hours (216000 seconds)
-        
-        -- Only start accrual after Dynamis D entry time + 60 hours
-        if now > dynamis_ready_time then
-            -- Calculate time elapsed since Dynamis D entry time + 60 hours
-            local time_elapsed = now - dynamis_ready_time
-            
-            -- Hourglass time increments by 1 second for every 5 seconds elapsed
-            local new_accumulated = math.floor(time_elapsed / 5)
-            
-            -- Update the accumulated time
-            current_state.hourglass_accumulated_time = new_accumulated
-            
-            debug_print('Updated accumulated hourglass time: ' .. new_accumulated .. ' seconds (time elapsed: ' .. time_elapsed .. ' seconds)')
-        end
-    end
-end
-
--- Calculate and update accumulated Ruspix Plate time
-local function update_accumulated_ruspix_time()
-    local current_state = get_state()
-    if not current_state then
-        return
-    end
-    
-    local now = os.time()
-    
-    -- Check if Shiny Rakaznarian Plate is off cooldown (regardless of ownership)
-    local shiny_plate_timestamp = current_state.timestamps and current_state.timestamps[3300] or 0
-    local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 0
-    
-    -- Calculate if Shiny Rakaznarian Plate is off cooldown
-    local shiny_plate_off_cooldown = false
-    if shiny_plate_cooldown > 0 and shiny_plate_timestamp > 0 then
-        local time_since_acquisition = now - shiny_plate_timestamp
-        if time_since_acquisition >= shiny_plate_cooldown then
-            shiny_plate_off_cooldown = true
-        end
-    end
-    
-    -- Only accumulate when Shiny Rakaznarian Plate is off cooldown
-    if shiny_plate_off_cooldown then
-        -- Calculate time since Shiny Plate came off cooldown
-        local time_since_cooldown_end = now - (shiny_plate_timestamp + shiny_plate_cooldown)
-        
-        -- Ruspix Plate time increments by 1 second for every 5 seconds elapsed
-        local new_accumulated = math.floor(time_since_cooldown_end / 5)
-        
-        -- Get Shiny Rakaznarian Plate cooldown for maximum accumulation
-        local max_accumulation = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
-        new_accumulated = math.min(max_accumulation, new_accumulated)
-        
-        -- Update the accumulated time
-        current_state.ruspix_accumulated_time = new_accumulated
-        
-        debug_print('Updated accumulated Ruspix Plate time: ' .. new_accumulated .. ' seconds (time since cooldown end: ' .. time_since_cooldown_end .. ' seconds)')
-    else
-        debug_print('Shiny Rakaznarian Plate on cooldown - not accumulating Ruspix Plate time')
-    end
-end
+-- Legacy accumulated time functions removed - accrual is now calculated on-the-fly
 
 -- Save state to persistence
 local function save_state()
-    -- Update accumulated hourglass time before saving
-    update_accumulated_hourglass_time()
-    -- Update accumulated Ruspix Plate time before saving
-    update_accumulated_ruspix_time()
+    -- Hourglass and Ruspix Plate accrual are now calculated on-the-fly, no need to update before saving
     return persistence.save_state(state, debug_print)
 end
 
@@ -399,7 +361,6 @@ function handler.clear_persistence_data()
     state = {
         dynamis_d_entry_time = 0,
         dynamis_projected_ready_time = 0,
-        hourglass_accumulated_time = 0,
         hourglass_packet_timestamp = 0,
         hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
         key_items = {
@@ -409,9 +370,7 @@ function handler.clear_persistence_data()
             [3052] = false,  -- Ambuscade Primer Vol. 1
             [3053] = false,  -- Ambuscade Primer Vol. 2
         },
-        last_canteen_time = 0,
         packet_ruspix_time = 0,
-        ruspix_accumulated_time = 0,
         storage_canteens = 0,
         timestamps = {
             [3212] = 0,  -- moglophone
@@ -420,6 +379,9 @@ function handler.clear_persistence_data()
             [3052] = 0,  -- Ambuscade Primer Vol. 1
             [3053] = 0,  -- Ambuscade Primer Vol. 2
         },
+        -- Smart cooldown management
+        canteen_cooldown_state = 'idle',
+        canteen_cooldown_start_time = 0,
     }
     
     -- Save empty state to overwrite persistence file
@@ -443,7 +405,6 @@ function handler.force_clear_persistence_file()
     state = {
         dynamis_d_entry_time = 0,
         dynamis_projected_ready_time = 0,
-        hourglass_accumulated_time = 0,
         hourglass_packet_timestamp = 0,
         hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
         key_items = {
@@ -453,9 +414,7 @@ function handler.force_clear_persistence_file()
             [3052] = false,  -- Ambuscade Primer Vol. 1
             [3053] = false,  -- Ambuscade Primer Vol. 2
         },
-        last_canteen_time = 0,
         packet_ruspix_time = 0,
-        ruspix_accumulated_time = 0,
         storage_canteens = 0,
         timestamps = {
             [3212] = 0,  -- moglophone
@@ -464,6 +423,9 @@ function handler.force_clear_persistence_file()
             [3052] = 0,  -- Ambuscade Primer Vol. 1
             [3053] = 0,  -- Ambuscade Primer Vol. 2
         },
+        -- Smart cooldown management
+        canteen_cooldown_state = 'idle',
+        canteen_cooldown_start_time = 0,
     }
     
     -- Force save empty state multiple times to ensure file is overwritten
@@ -490,7 +452,6 @@ function handler.nuclear_clear_persistence()
     state = {
         dynamis_d_entry_time = 0,
         dynamis_projected_ready_time = 0,
-        hourglass_accumulated_time = 0,
         hourglass_packet_timestamp = 0,
         hourglass_time = -1,  -- -1 represents "Unknown" until packet value is received
         key_items = {
@@ -500,9 +461,7 @@ function handler.nuclear_clear_persistence()
             [3052] = false,  -- Ambuscade Primer Vol. 1
             [3053] = false,  -- Ambuscade Primer Vol. 2
         },
-        last_canteen_time = 0,
         packet_ruspix_time = 0,
-        ruspix_accumulated_time = 0,
         storage_canteens = 0,
         timestamps = {
             [3212] = 0,  -- moglophone
@@ -511,6 +470,9 @@ function handler.nuclear_clear_persistence()
             [3052] = 0,  -- Ambuscade Primer Vol. 1
             [3053] = 0,  -- Ambuscade Primer Vol. 2
         },
+        -- Smart cooldown management
+        canteen_cooldown_state = 'idle',
+        canteen_cooldown_start_time = 0,
     }
     
     -- Clear persistence data using the settings library
@@ -735,7 +697,8 @@ end
 -- Duplicate zone change handler removed to prevent duplicate "ready for pickup" messages
 
 -- Handle 0x55 packets (key item list)
-ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
+if ashita.events then
+    ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
     -- Basic debug: log all incoming packets
     if debugMode then
         debug_print('Packet received: 0x' .. string.format('%02X', e.id) .. ' (size: ' .. #e.data .. ')')
@@ -790,10 +753,23 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                     -- Key item state changed - update persistence
                     current_state.key_items[ki] = hasKeyItem
                     
-                    -- If Mystical Canteen ownership changed, request storage count update
-                    if ki == 3137 then
-                        debug_print('0x55: Mystical Canteen ownership changed to ' .. tostring(hasKeyItem) .. ' - requesting storage count update')
+                    -- If Mystical Canteen is newly acquired, decrease storage count and check for cooldown
+                    if ki == 3137 and hasKeyItem and not wasOwned then
+                        local previous_count = current_state.storage_canteens or 0
+                        current_state.storage_canteens = math.max(0, previous_count - 1)
+                        
+                        debug_print('0x55: Mystical Canteen newly acquired - decreasing storage from ' .. previous_count .. ' to ' .. current_state.storage_canteens)
+                        
+                        -- Use smart cooldown management
+                        handle_canteen_cooldown(previous_count, current_state.storage_canteens)
+                        
+                        -- Save state immediately
+                        save_state()
+                        
+                        -- Request storage update to verify
                         request_currency_data()
+                    elseif ki == 3137 then
+                        debug_print('0x55: Mystical Canteen state changed - hasKeyItem: ' .. tostring(hasKeyItem) .. ', wasOwned: ' .. tostring(wasOwned))
                     end
                     
                     -- If Shiny Rakaznarian Plate is acquired while on cooldown, reset Ruspix Plate timer
@@ -816,7 +792,6 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                         if shiny_plate_on_cooldown then
                             debug_print('0x55: Shiny Rakaznarian Plate acquired while on cooldown - resetting Ruspix Plate timer')
                             current_state.packet_ruspix_time = 0
-                            current_state.ruspix_accumulated_time = 0
                         else
                             debug_print('0x55: Shiny Rakaznarian Plate acquired while off cooldown - not resetting Ruspix Plate timer')
                         end
@@ -926,7 +901,7 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                 
                 -- Calculate when the cooldown started using the fresh server data
                 local current_time = os.time()
-                local total_cooldown = 72000  -- 20 hours
+                local total_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
                 local cooldown_start = current_time - (total_cooldown - shiny_plate_remaining)
                 
                 -- Update the Shiny Plate cooldown start timestamp (same field used by 0x55 handler)
@@ -973,19 +948,18 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                 debug_print('0x05C: Shiny Plate remaining: ' .. shiny_plate_remaining .. ' seconds, 0x05C value: ' .. ruspix_plate_remaining .. ' seconds')
                 debug_print('0x05C: Calculated Ruspix Plate time: ' .. calculated_ruspix_time .. ' seconds (Shiny Plate remaining: ' .. shiny_plate_remaining .. ' - 0x05C value: ' .. ruspix_plate_remaining .. ')')
                 
-                -- Cap Ruspix Plate time at 20 hours (72000 seconds)
-                local max_ruspix_time = 72000
+                -- Cap Ruspix Plate time at Shiny Plate cooldown value
+                local max_ruspix_time = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
                 local capped_ruspix_time = math.min(calculated_ruspix_time, max_ruspix_time)
                 
                 -- Update the Ruspix Plate time in our state
                 current_state.packet_ruspix_time = capped_ruspix_time
-                current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
                 
                 -- Save the state
                 save_state()
                 
                 if calculated_ruspix_time > max_ruspix_time then
-                    debug_print('0x05C: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. calculated_ruspix_time .. ' seconds), accrual reset to 0')
+                    debug_print('0x05C: Ruspix Plate time capped at ' .. math.floor(max_ruspix_time/3600) .. ' hours: ' .. capped_ruspix_time .. ' seconds (was ' .. calculated_ruspix_time .. ' seconds)')
                 else
                     debug_print('0x05C: Ruspix Plate time updated to: ' .. capped_ruspix_time .. ' seconds (calculated from remaining cooldown)')
                 end
@@ -1068,7 +1042,6 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                         -- Set the remaining time as the new base hourglass time (no more accrual since Dynamis will be on cooldown)
                         current_state.hourglass_time = remaining_time
                         current_state.hourglass_packet_timestamp = now  -- Reset timestamp since we're setting new base time
-                        current_state.hourglass_accumulated_time = 0  -- Reset accumulated time since we consumed it
                         current_state.hourglass_last_save_timestamp = now
                         
                         print(chat.header('Keyring'):append(chat.message(string.format('Entered Dynamis [D] with cooldown - consumed %d:%02d hourglass time', 
@@ -1182,9 +1155,6 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                     current_state.hourglass_time = capped_hourglass_time
                     current_state.hourglass_packet_timestamp = now  -- Store timestamp when packet was received
                     
-                    -- Reset accumulated time since the new packet value includes any accumulated time
-                    current_state.hourglass_accumulated_time = 0
-                    
                     if current_base == -1 then
                         if hourglass_time > max_hourglass_time then
                             print(chat.header('Keyring'):append(chat.message('Empty Hourglass time received from server: ' .. capped_hourglass_time .. ' seconds (capped at 60 hours)')))
@@ -1206,25 +1176,44 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
         end
         
         -- Process Ruspix Plate data only in Outer Ra'Kaznar zones
-        if is_in_outer_rakaznar and #e.data >= 0x1C then  -- Need at least 28 bytes for offset 0x18-0x1B
-            local ruspix_plate_time = struct.unpack('I', e.data, 0x18+1)  -- 32-bit at offset 0x18-0x1B
+        if is_in_outer_rakaznar and #e.data >= 0x1C then  -- Need at least 28 bytes for offset 0x1A (message ID)
+            -- Validate this is a genuine Ruspix Plate response by checking message ID
+            -- Message ID is at offset 0x1A as unsigned short (16-bit)
+            local messageId = struct.unpack('H', e.data, 0x1A+1)
+            debug_print('0x02A: Outer Ra\'Kaznar zone packet - message ID: ' .. messageId .. ' (expected: 70)')
+            
+            -- Note: struct.unpack('H') automatically handles unsigned short bounds (0-65535)
+            
+            if messageId ~= 70 then
+                debug_print('0x02A: Ignoring packet in Outer Ra\'Kaznar zone - invalid message ID: ' .. messageId .. ' (expected: 70)')
+                return
+            end
+            
+            -- Process valid Ruspix Plate packet
+            -- Extract Ruspix Plate time from offset 0x10-0x13 (32-bit value)
+            local ruspix_plate_time = struct.unpack('I', e.data, 0x10+1)
+            
+            -- Additional validation: ensure the time value is reasonable
+            if ruspix_plate_time < 0 or ruspix_plate_time > 1000000 then  -- Sanity check: 0 to ~11.5 days
+                debug_print('0x02A: Ignoring Ruspix Plate packet - invalid time value: ' .. ruspix_plate_time .. ' seconds')
+                return
+            end
             
             local current_state = get_state()
             
-            debug_print('0x02A: Direct Ruspix Plate time from packet: ' .. ruspix_plate_time .. ' seconds')
+            debug_print('0x02A: Validated Ruspix Plate response - message ID: ' .. messageId .. ', time: ' .. ruspix_plate_time .. ' seconds')
             
-            -- Cap Ruspix Plate time at 20 hours (72000 seconds)
-            local max_ruspix_time = 72000
+            -- Cap Ruspix Plate time at Shiny Plate cooldown value
+            local max_ruspix_time = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
             local capped_ruspix_time = math.min(ruspix_plate_time, max_ruspix_time)
             
             -- Update the packet time (same variable used by 0x05C)
             current_state.packet_ruspix_time = capped_ruspix_time
-            current_state.ruspix_accumulated_time = 0  -- Reset accrual since this is new packet data
             
             if ruspix_plate_time > max_ruspix_time then
-                debug_print('0x02A: Ruspix Plate time capped at 20 hours: ' .. capped_ruspix_time .. ' seconds (was ' .. ruspix_plate_time .. ' seconds), accrual reset to 0')
+                debug_print('0x02A: Ruspix Plate time capped at ' .. math.floor(max_ruspix_time/3600) .. ' hours: ' .. capped_ruspix_time .. ' seconds (was ' .. ruspix_plate_time .. ' seconds)')
             else
-                debug_print('0x02A: Ruspix Plate time updated from packet: ' .. capped_ruspix_time .. ' seconds, accrual reset to 0')
+                debug_print('0x02A: Ruspix Plate time updated from packet: ' .. capped_ruspix_time .. ' seconds')
             end
             
             -- Save state after Ruspix Plate update
@@ -1244,11 +1233,22 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
     elseif e.id == 0x118 then
         -- Canteen storage response (0x118)
         local current_state = get_state()
-
+        
         local canteenCount = e.data:byte(12) or 0 
         canteenCount = math.min(canteenCount, 3)
         
         local previousCount = current_state.storage_canteens or 0
+        
+        -- Prevent processing duplicate packets with the same count
+        if canteenCount == previousCount then
+            debug_print('0x118: Ignoring duplicate packet - count unchanged: ' .. canteenCount)
+            return
+        end
+        
+        debug_print('0x118: Canteen storage update - previous: ' .. previousCount .. ', new: ' .. canteenCount .. ', change: ' .. (canteenCount - previousCount))
+        
+        -- Use smart cooldown management for all count changes
+        handle_canteen_cooldown(previousCount, canteenCount)
         
         -- Check if canteens increased (indicating new generation)
         if canteenCount > previousCount then
@@ -1268,27 +1268,29 @@ ashita.events.register('packet_in', 'Keyring_PacketHandler', function(e)
                 print(chat.header('Keyring'):append(chat.message('Canteen storage increased but exact acquisition time unknown.')))
                 print(chat.header('Keyring'):append(chat.message('Please acquire a canteen manually to start accurate tracking.')))
             end
-        elseif canteenCount < previousCount then
-            -- Canteen was used (count decreased)
-            
-            -- Start the generation timer when storage decreases from 3 to 2
-            if previousCount == 3 and canteenCount == 2 then
-                current_state.last_canteen_time = os.time()
-                print(chat.header('Keyring'):append(chat.message('Canteen cooldown started - next canteen in 20 hours')))
-            end
         else
             -- Normal case: just update the count (no change detected)
         end
 
+        -- Check if storage count actually changed
+        if canteenCount ~= previousCount then
+            debug_print('0x118: Storage count changed from ' .. previousCount .. ' to ' .. canteenCount .. ' - saving state')
+            save_state()
+        else
+            debug_print('0x118: Storage count unchanged at ' .. canteenCount .. ' - no save needed')
+        end
+        
+        -- Check for any discrepancy between packet and what we expected
+        if canteenCount ~= previousCount then
+            debug_print('0x118: Count change detected - packet shows ' .. canteenCount .. ', previous state was ' .. previousCount .. ' - using packet as authoritative')
+        end
+        
         current_state.storage_canteens = canteenCount
 
         -- Trigger currency callback if registered
         if currency_callback then
             currency_callback(canteenCount)
         end
-
-        -- Save state after canteen data changes
-        save_state()
     end
 end)
 
@@ -1320,6 +1322,7 @@ ashita.events.register('packet_out', 'Keyring_Outgoing', function(e)
         end
     end
 end)
+end
 
 -- API functions for other modules
 function handler.has_key_item(id)
@@ -1379,44 +1382,45 @@ function handler.get_storage_info()
     }
 end
 
-function handler.get_canteen_timestamp()
-    local current_state = get_state()
-    return current_state.last_canteen_time or 0
-end
+-- Legacy function removed - use get_canteen_generation_remaining() instead
 
 function handler.update_storage_canteens()
     local current_state = get_state()
     local currentTime = os.time()
     
-    -- Only process if we have a valid generation timer and storage is not full
-    if current_state.last_canteen_time and current_state.last_canteen_time > 0 and current_state.storage_canteens and current_state.storage_canteens < 3 then
-        local timeSinceTimerStart = currentTime - current_state.last_canteen_time
+    -- Use smart cooldown state instead of legacy timer
+    if current_state.canteen_cooldown_state == 'running' and current_state.storage_canteens and current_state.storage_canteens < 3 then
+        local timeSinceTimerStart = currentTime - current_state.canteen_cooldown_start_time
         
         -- If the timer is more than 24 hours old, it's probably stale - reset it
         if timeSinceTimerStart > 86400 then  -- 24 hours
             print(chat.header('Keyring'):append(chat.message('Canteen generation timer is stale, resetting')))
-            current_state.last_canteen_time = 0
+            current_state.canteen_cooldown_state = 'idle'
+            current_state.canteen_cooldown_start_time = 0
             save_state()
             return current_state.storage_canteens or 0
         end
         
-        -- Check if 20 hours have passed since timer started
-        if timeSinceTimerStart >= 72000 then  -- 20 hours = 72000 seconds
+        -- Check if canteen generation time has passed since timer started
+        local canteen_cooldown = trackedKeyItems and trackedKeyItems[3137] and trackedKeyItems[3137].cooldown or 72000
+        if timeSinceTimerStart >= canteen_cooldown then
             -- Generate one canteen
             current_state.storage_canteens = current_state.storage_canteens + 1
             
             -- If we haven't reached max capacity, continue the timer for next generation
             if current_state.storage_canteens < 3 then
                 -- Reset timer to current time for next generation cycle
-                current_state.last_canteen_time = currentTime
-                print(chat.header('Keyring'):append(chat.message('Canteen generated: ' .. current_state.storage_canteens .. '/3 - next canteen in 20 hours')))
+                current_state.canteen_cooldown_start_time = currentTime
+                local hours = math.floor(canteen_cooldown / 3600)
+                print(chat.header('Keyring'):append(chat.message('Canteen generated: ' .. current_state.storage_canteens .. '/3 - next canteen in ' .. hours .. ' hours')))
             else
                 -- Storage is full, stop the timer
-                current_state.last_canteen_time = 0
+                current_state.canteen_cooldown_state = 'idle'
+                current_state.canteen_cooldown_start_time = 0
                 print(chat.header('Keyring'):append(chat.message('Canteen generated: ' .. current_state.storage_canteens .. '/3 - storage full')))
             end
             
-            -- Save state after updating
+            -- Save state immediately
             save_state()
         end
     end
@@ -1432,21 +1436,22 @@ function handler.get_canteen_generation_remaining()
         return nil
     end
     
-    -- If no timer is active, no generation is happening
-    if not current_state.last_canteen_time or current_state.last_canteen_time <= 0 then
+    -- Use smart cooldown state instead of legacy timer
+    if current_state.canteen_cooldown_state ~= 'running' then
         return nil
     end
     
     local currentTime = os.time()
-    local timeSinceTimerStart = currentTime - current_state.last_canteen_time
+    local timeSinceTimerStart = currentTime - current_state.canteen_cooldown_start_time
     
     -- If the timer is more than 24 hours old, it's stale
     if timeSinceTimerStart > 86400 then
         return nil
     end
     
-    -- Calculate remaining time until next generation (20 hours = 72000 seconds)
-    local remaining = 72000 - timeSinceTimerStart
+    -- Calculate remaining time until next generation
+    local canteen_cooldown = trackedKeyItems and trackedKeyItems[3137] and trackedKeyItems[3137].cooldown or 72000
+    local remaining = canteen_cooldown - timeSinceTimerStart
     return math.max(0, remaining)
 end
 
@@ -1479,16 +1484,44 @@ end
 
 function handler.get_hourglass_time()
     local current_state = get_state()
+    if not current_state then
+        debug_print('get_hourglass_time: No current state')
+        return -1
+    end
+    
     local base_hourglass_time = current_state.hourglass_time or -1
-    local accumulated_time = current_state.hourglass_accumulated_time or 0
     
     -- If hourglass_time is -1 (Unknown), return -1
     if base_hourglass_time == -1 then
         return -1
     end
     
-    -- Return base hourglass time plus accumulated time (no real-time calculation)
-    return base_hourglass_time + accumulated_time
+    local dynamis_d_entry_time = current_state.dynamis_d_entry_time or 0
+    local current_time = os.time()
+    
+    debug_print('get_hourglass_time: base=' .. base_hourglass_time .. ', dynamis_d_entry_time=' .. dynamis_d_entry_time)
+    
+    -- Check if we're past the 60-hour mark from Dynamis [D] entry
+    if dynamis_d_entry_time > 0 then
+        local accrual_start_time = dynamis_d_entry_time + 216000  -- 60 hours = 216000 seconds
+        if current_time > accrual_start_time then
+            -- Past 60 hours - calculate accrual
+            local time_since_accrual_start = current_time - accrual_start_time
+            local accrued_time = math.floor(time_since_accrual_start / 5)  -- 1:5 ratio
+            
+            -- Apply cap: min(base_hourglass_time + accrued_time, 216000) - 60 hour max (Dynamis [D] cooldown)
+            local total_time = math.min(base_hourglass_time + accrued_time, 216000)
+            
+            debug_print('get_hourglass_time: Past 60 hours, accrued_time=' .. accrued_time .. ', total=' .. total_time)
+            return total_time
+        else
+            debug_print('get_hourglass_time: Within 60 hours, no accrual, returning base=' .. base_hourglass_time)
+        end
+    end
+    
+    -- No accrual - return base time only
+    debug_print('get_hourglass_time: No dynamis entry time, returning base=' .. base_hourglass_time)
+    return base_hourglass_time
 end
 
 function handler.get_hourglass_time_remaining()
@@ -1508,15 +1541,7 @@ function handler.get_hourglass_packet_timestamp()
     return current_state.hourglass_packet_timestamp or 0
 end
 
-function handler.get_hourglass_accumulated_time()
-    local current_state = get_state()
-    if not current_state then
-        return 0
-    end
-    
-    -- Simply return the stored accumulated time
-    return current_state.hourglass_accumulated_time or 0
-end
+-- Legacy function removed - use get_hourglass_time() instead
 
 -- Helper function to format hourglass time for display
 function handler.format_hourglass_time(hourglass_time)
@@ -1536,7 +1561,6 @@ function handler.reset_hourglass_time()
     local current_state = get_state()
     current_state.hourglass_time = -1  -- Reset to "Unknown" until packet value is received
     current_state.hourglass_packet_timestamp = 0
-    current_state.hourglass_accumulated_time = 0
     save_state()
     return true
 end
@@ -1545,7 +1569,6 @@ function handler.force_hourglass_time(time_value)
     local current_state = get_state()
     current_state.hourglass_time = time_value
     current_state.hourglass_packet_timestamp = os.time()
-    current_state.hourglass_accumulated_time = 0
     save_state()
     return true
 end
@@ -1559,42 +1582,37 @@ function handler.get_ruspix_time()
         return 0
     end
     
-    local base_ruspix_time = current_state.packet_ruspix_time or 0
-    local accumulated_time = current_state.ruspix_accumulated_time or 0
-    
-    debug_print('get_ruspix_time: base=' .. base_ruspix_time .. ', accumulated=' .. accumulated_time)
-    
-    -- Check if Shiny Rakaznarian Plate is off cooldown (regardless of ownership)
+    local packet_time = current_state.packet_ruspix_time or 0
     local shiny_plate_timestamp = current_state.timestamps and current_state.timestamps[3300] or 0
-    local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 0
+    local current_time = os.time()
     
-    local total = base_ruspix_time
+    debug_print('get_ruspix_time: packet_time=' .. packet_time .. ', shiny_plate_timestamp=' .. shiny_plate_timestamp)
     
-    -- If Shiny Plate is off cooldown, add accumulated time
-    if shiny_plate_cooldown > 0 and shiny_plate_timestamp > 0 then
-        local now = os.time()
-        local time_since_acquisition = now - shiny_plate_timestamp
-        if time_since_acquisition >= shiny_plate_cooldown then
-            total = total + accumulated_time
-            debug_print('get_ruspix_time: Shiny plate off cooldown, adding accumulated time: ' .. accumulated_time)
+    -- Check if Shiny Plate is off cooldown
+    if shiny_plate_timestamp > 0 then
+        local shiny_plate_cooldown = trackedKeyItems and trackedKeyItems[3300] and trackedKeyItems[3300].cooldown or 72000
+        local cooldown_end_time = shiny_plate_timestamp + shiny_plate_cooldown
+        if current_time > cooldown_end_time then
+            -- Shiny Plate is off cooldown - calculate accrual
+            local time_since_cooldown_end = current_time - cooldown_end_time
+            local accrued_time = math.floor(time_since_cooldown_end / 5)  -- 1:5 ratio
+            
+            -- Apply cap: min(packet_time + accrued_time, shiny_plate_cooldown)
+            local total_time = math.min(packet_time + accrued_time, shiny_plate_cooldown)
+            
+            debug_print('get_ruspix_time: Shiny plate off cooldown, accrued_time=' .. accrued_time .. ', total=' .. total_time)
+            return total_time
         else
-            debug_print('get_ruspix_time: Shiny plate on cooldown, no accumulation')
+            debug_print('get_ruspix_time: Shiny plate on cooldown, no accrual, returning packet_time=' .. packet_time)
         end
     end
     
-    debug_print('get_ruspix_time: total=' .. total)
-    return total
+    -- No accrual - return packet time only
+    debug_print('get_ruspix_time: No shiny plate timestamp, returning packet_time=' .. packet_time)
+    return packet_time
 end
 
-function handler.get_ruspix_accumulated_time()
-    local current_state = get_state()
-    if not current_state then
-        return 0
-    end
-    
-    -- Simply return the stored accumulated time
-    return current_state.ruspix_accumulated_time or 0
-end
+-- Legacy function removed - use get_ruspix_time() instead
 
 function handler.get_ruspix_packet_time()
     local current_state = get_state()
@@ -1611,7 +1629,6 @@ function handler.reset_ruspix_time()
     end
     
     current_state.packet_ruspix_time = 0
-    current_state.ruspix_accumulated_time = 0
     save_state()
     return true
 end
@@ -1627,7 +1644,6 @@ function handler.force_ruspix_time(time_value)
     end
     
     current_state.packet_ruspix_time = time_value
-    current_state.ruspix_accumulated_time = 0
     save_state()
     return true
 end
@@ -1662,6 +1678,21 @@ end
 -- API: Register callback for GUI updates
 function handler.set_gui_update_callback(cb)
     gui_update_callback = cb
+end
+
+-- Custom GUI update throttling using os.time (standard Lua)
+local last_gui_update_time = 0
+local gui_update_throttle = 5  -- 5 seconds
+
+-- Throttled GUI update function
+function handler.throttled_gui_update()
+    local current_time = os.time()
+    if current_time - last_gui_update_time >= gui_update_throttle then
+        if gui_update_callback then
+            gui_update_callback()
+        end
+        last_gui_update_time = current_time
+    end
 end
 
 -- API: Get current zone ID
@@ -1707,13 +1738,43 @@ function handler.reset_canteen_flags()
     return true
 end
 
--- Save state on unload
-ashita.events.register('unload', 'Keyring_Unload_Save', function()
-    pcall(function()
-        -- Save state
+-- Simple timer system using os.time (standard Lua)
+local last_periodic_save_time = 0
+local periodic_save_interval = 5  -- 5 seconds
+
+-- Periodic save check (called from main addon loop)
+function handler.check_periodic_save()
+    local current_time = os.time()
+    if current_time - last_periodic_save_time >= periodic_save_interval then
         save_state()
+        last_periodic_save_time = current_time
+    end
+end
+
+-- Main timer check function - call this from the main addon loop
+function handler.check_all_timers()
+    -- Check periodic save
+    handler.check_periodic_save()
+    
+    -- Check canteen generation
+    handler.update_storage_canteens()
+end
+
+-- Save state on unload
+if ashita.events then
+    ashita.events.register('unload', 'Keyring_Unload_Save', function()
+        pcall(function()
+            -- Force save any dirty state before unloading
+            local current_state = get_state()
+            if current_state and current_state.is_dirty then
+                debug_print('Unloading with dirty state - forcing save')
+                save_state()
+            end
+        end)
     end)
-end)
+else
+    debug_print('Warning: ashita.events not available - unload save disabled')
+end
 
 -- Notification cooldown API removed - no longer needed
 

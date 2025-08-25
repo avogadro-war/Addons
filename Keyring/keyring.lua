@@ -26,19 +26,12 @@ packet_tracker.set_currency_callback(function(canteens)
 end)
 
 -- Set up GUI update callback to refresh display when persistence data is loaded
-local last_gui_update = 0
-local gui_update_throttle = 5.0  -- Only allow GUI updates every 5 seconds
-
 packet_tracker.set_gui_update_callback(function()
-    local now = os.clock()
-    if now - last_gui_update >= gui_update_throttle then
-        last_gui_update = now
-        -- Force GUI refresh by toggling visibility (this triggers a redraw)
-        local was_visible = gui.is_visible()
-        if was_visible then
-            gui.set_visible(false)
-            gui.set_visible(true)
-        end
+    -- Force GUI refresh by toggling visibility (this triggers a redraw)
+    local was_visible = gui.is_visible()
+    if was_visible then
+        gui.set_visible(false)
+        gui.set_visible(true)
     end
 end)
 
@@ -52,8 +45,7 @@ local notification_enabled = true
 local last_player_id_message = 0
 local player_id_message_interval = 5  -- Only show message every 5 seconds
 
--- Storage update throttling
-local last_storage_update = 0
+-- Storage update throttling (now handled by custom timer system)
 
 -- Debug helper function
 local function debug_print(message)
@@ -563,12 +555,11 @@ ashita.events.register('d3d_present', 'render', function()
     
     -- Continue with normal operation if initialization is complete
     if packet_tracker.is_initialized() then
-        -- Update storage canteens every 5 seconds
-        local current_time_seconds = os.time()
-        if current_time_seconds - (last_storage_update or 0) > 5 then
-            storage_canteens = packet_tracker.update_storage_canteens()
-            last_storage_update = current_time_seconds
-        end
+        -- Use our custom timer system instead of manual time checks
+        packet_tracker.check_all_timers()
+        
+        -- Update storage canteens from the timer system
+        storage_canteens = packet_tracker.get_storage_info().count
 
         -- Render the GUI using the modularized GUI system
         local keyItemStatuses = packet_tracker.get_key_item_statuses()

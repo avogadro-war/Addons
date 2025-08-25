@@ -246,7 +246,11 @@ end
 
 local function load_triggers(setname, type)
     local triggerfile = triggerloader.load_trigger(setname, type, addon.path, resolve_cooldown_alerts)
-    if not triggerfile then return end
+    if not triggerfile then 
+        print(('[onevent2][ERROR] Failed to load trigger file: %s, type: %s'):format(setname, type))
+        return 
+    end
+    
     if type == 'jobs' then
         onevent.job_triggers = T(triggerfile.chat_triggers or {})
         onevent.bufflose_alerts = triggerfile.bufflose_alerts or {}
@@ -349,13 +353,16 @@ end)
 -- Packet Handling
 --------------------------------------------------------------------------------
 packethandler.start()
+autoload.start()
 --------------------------------------------------------------------------------
 -- Auto-Load
 --------------------------------------------------------------------------------
 autoload.set_job_trigger_loader(function(setname) load_triggers(setname, 'jobs') end)
 autoload.set_job_trigger_unloader(unload_job_triggers)
 autoload.set_boss_trigger_loader(function(setname) load_triggers(setname, 'bosses') end)
-autoload.set_zone_trigger_loader(function(setname) load_triggers(setname, 'zones') end)
+autoload.set_zone_trigger_loader(function(setname) 
+    load_triggers(setname, 'zones') 
+end)
 
 local cooldown_alerts_factory = require('utils.cooldown_alerts')
 local cooldown_alerts = cooldown_alerts_factory(

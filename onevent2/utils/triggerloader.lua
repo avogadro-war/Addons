@@ -11,6 +11,7 @@ local triggerloader = {}
 -- Generic loader for triggers (job, boss, zone)
 function triggerloader.load_trigger(setname, trigger_type, addon_path, resolve_cooldown_alerts)
     local path = string.format('%striggers/%s/%s.lua', addon_path, trigger_type, setname)
+    
     local ok, triggerfile = pcall(dofile, path)
     if not ok then
         log.error('Failed to load ' .. trigger_type .. ' trigger set: ' .. setname .. ' (' .. tostring(triggerfile) .. ')')
@@ -19,6 +20,7 @@ function triggerloader.load_trigger(setname, trigger_type, addon_path, resolve_c
         log.error('Trigger file ' .. setname .. ' did not return a table.')
         return nil
     end
+    
     if trigger_type == 'jobs' then
         if (triggerfile.chat_triggers and type(triggerfile.chat_triggers) ~= 'table') or
            (triggerfile.bufflose_alerts and type(triggerfile.bufflose_alerts) ~= 'table') or

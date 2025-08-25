@@ -24,10 +24,16 @@ function packethandler.start()
 
         -- Zone change packet
         if e.id == 0x00A then
-            local zoneId = struct.unpack('H', e.data, 0x10+1)
-            packethandler.onZoneChange:trigger(zoneId)
-            debug_log(('Zone change detected: %d'):format(zoneId))
-            buff_state_manager.reset_all()
+            local zoneId = struct.unpack('H', e.data, 0x30+1)
+            
+            -- Only proceed if we have a valid zone ID
+            if zoneId > 0 then
+                local success, err = pcall(function() packethandler.onZoneChange:trigger(zoneId) end)
+                if not success then
+                    print(('[onevent2][ERROR] Failed to trigger zone change event: %s'):format(tostring(err)))
+                end
+                buff_state_manager.reset_all()
+            end
 
         -- Action Message Packet
         elseif e.id == 0x29 then
