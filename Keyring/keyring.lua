@@ -1,7 +1,21 @@
+-- ============================================================================
+-- KEYRING ADDON - KEY ITEM COOLDOWN TRACKER
+-- ============================================================================
+-- Tracks cooldowns and availability of key items in Final Fantasy XI
+-- Automatically detects item acquisition, usage, and cooldown states via packet analysis
+-- Provides real-time GUI display and notifications for key item management
+--
+-- Author: Avogadro, with assistance from Thorny and Will
+-- Version: 0.4.3
+-- ============================================================================
+
 addon.author   = 'Avogadro, assistance from Thorny and Will'
 addon.name     = 'Keyring'
 addon.version  = '0.4.3'
 
+-- ============================================================================
+-- MODULE IMPORTS
+-- ============================================================================
 require('common')
 local chat = require('chat')
 local trackedData = require('tracked_key_items')
@@ -12,15 +26,24 @@ local gui = require('keyring_gui')
 local itemManagementGui = require('item_management_gui')
 local persistence = require('keyring_persistence')
 
--- Inject persistence functions into tracked items module
+-- ============================================================================
+-- MODULE INITIALIZATION AND SETUP
+-- ============================================================================
+-- Inject persistence functions into tracked items module for data persistence
 trackedData.set_persistence_functions(
     function(key, data) return persistence.save_data(key, data) end,
     function(key) return persistence.load_data(key) end
 )
 
--- Local copies of canteen state, updated via callback
+
+
+-- ============================================================================
+-- STATE VARIABLES AND CALLBACKS
+-- ============================================================================
+-- Local storage for canteen state, updated via callback from packet handler
 local storage_canteens = 0
 
+-- Set up canteen count callback to keep local state synchronized
 packet_tracker.set_currency_callback(function(canteens)
     storage_canteens = canteens
 end)
@@ -35,39 +58,47 @@ packet_tracker.set_gui_update_callback(function()
     end
 end)
 
--- Zone tracking (now handled by packet handler)
-
--- Debug and notification flags
+-- ============================================================================
+-- CONFIGURATION AND FLAGS
+-- ============================================================================
+-- Debug and notification system configuration
 local debug_mode = false  -- Disable debug mode for normal operation
 local notification_enabled = true
 
--- Player ID detection throttling
+-- Player ID detection throttling to prevent spam
 local last_player_id_message = 0
 local player_id_message_interval = 5  -- Only show message every 5 seconds
 
--- Storage update throttling (now handled by custom timer system)
+-- Note: Storage update throttling is now handled by custom timer system in packet handler
 
--- Debug helper function
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+-- Debug output function - only prints when debug mode is enabled
 local function debug_print(message)
     if debug_mode then
         print(chat.header('Keyring Debug'):append(chat.message(message)))
     end
 end
 
--- Memory monitoring function (for debugging)
+-- Memory usage monitoring function for debugging and performance tracking
 local function get_memory_usage()
     local info = collectgarbage('count')
     return math.floor(info / 1024 * 100) / 100 -- Convert to MB with 2 decimal places
 end
 
--- Set debug mode in packet handler
+-- Synchronize debug mode setting with packet handler module
 local function update_debug_mode()
     if packet_tracker.set_debug_mode then
         packet_tracker.set_debug_mode(debug_mode)
     end
 end
 
--- Helper function to check if item is available
+-- ============================================================================
+-- ITEM AVAILABILITY LOGIC
+-- ============================================================================
+-- Check if a specific item is available for pickup
+-- Handles special cases like canteens (storage-based) vs cooldown-based items
 local function is_item_available(id)
     if id == 3137 then
         -- Canteen availability: must have storage canteens AND not have one in inventory
@@ -75,11 +106,16 @@ local function is_item_available(id)
         local hasCanteen = packet_tracker.has_key_item(3137)
         return canteenCount > 0 and not hasCanteen
     else
+        -- Standard cooldown-based items - check if cooldown is complete
         return packet_tracker.is_available(id)
     end
 end
 
--- Set up zone change callback
+-- ============================================================================
+-- ZONE CHANGE NOTIFICATION SYSTEM
+-- ============================================================================
+-- Set up zone change callback to notify player of available key items
+-- Triggers when player zones and checks for items ready for pickup
 packet_tracker.set_zone_change_callback(function(current_zone, previous_zone)
     -- Check for available key items after zoning (if notifications are enabled)
     if notification_enabled then
@@ -103,7 +139,11 @@ packet_tracker.set_zone_change_callback(function(current_zone, previous_zone)
     end
 end)
 
--- Helper function to get available items for pickup
+-- ============================================================================
+-- ITEM AVAILABILITY CHECKING
+-- ============================================================================
+-- Get a list of all key items currently available for pickup
+-- Returns item names for items that are ready and not currently owned
 local function get_available_items()
     local availableItems = {}
     -- Only check specific items: Moglophone, Shiny Rakaznarian plate, and Mystical Canteen
@@ -126,19 +166,35 @@ local function get_available_items()
     return availableItems
 end
 
--- Command handler
+-- ============================================================================
+-- COMMAND HANDLER SYSTEM
+-- ============================================================================
+-- Main command handler for all /keyring commands
+-- Processes user input and executes appropriate addon functions
 ashita.events.register('command', 'command_cb', function(e)
     local args = e.command:lower():split(' ')
     if args[1] ~= '/keyring' then return false end
 
+    -- ============================================================================
+    -- GUI TOGGLE COMMAND
+    -- ============================================================================
     -- Toggle the GUI if no extra args or 'gui'
     if args[2] == nil or args[2] == '' or args[2] == 'gui' then
         local isVisible = gui.toggle()
         print(chat.header('Keyring'):append(chat.message('GUI ' .. (isVisible and 'toggled on.' or 'toggled off.'))))
+        
+        -- Request fresh currency data (Imprimaturs and canteens) when GUI is opened
+        if isVisible then
+            packet_tracker.request_currency_data()
+        end
+        
         return true
     end
 
-    -- Help command
+    -- ============================================================================
+    -- HELP COMMAND
+    -- ============================================================================
+    -- Display comprehensive help information about the addon and its features
     if args[2] == 'help' then
         print(chat.header('Keyring'):append(chat.message('Keyring Addon v0.4.4 - Key Item Cooldown Tracker')))
         print(chat.message(''))
@@ -170,11 +226,11 @@ ashita.events.register('command', 'command_cb', function(e)
         print(chat.message('  /keyring reset_hourglass - Reset hourglass time to 0'))
         print(chat.message('  /keyring force_hourglass <seconds> - Force hourglass time (bypasses validation)'))
         print(chat.message(''))
-        
         print(chat.message('== DEBUG COMMANDS =='))
         print(chat.message('  /keyring debug - Toggle debug messages in chat'))
         print(chat.message('  /keyring memory - Show current memory usage'))
         print(chat.message('  /keyring debug_item <item> - Debug specific item state'))
+        print(chat.message('  /keyring debug_canteen - Show detailed canteen cooldown state'))
         print(chat.message(''))
         print(chat.message('== NOTIFICATIONS =='))
         print(chat.message('  • Individual item acquisition alerts for: Moglophone, Shiny Ra\'Kaznarian Plate, Mystical Canteen'))
@@ -194,7 +250,10 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Debug toggle
+    -- ============================================================================
+    -- DEBUG COMMANDS
+    -- ============================================================================
+    -- Toggle debug mode on/off for troubleshooting and development
     if args[2] == 'debug' then
         debug_mode = not debug_mode
         update_debug_mode()
@@ -205,21 +264,30 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Memory usage command
+    -- ============================================================================
+    -- SYSTEM MONITORING COMMANDS
+    -- ============================================================================
+    -- Display current memory usage for performance monitoring
     if args[2] == 'memory' then
         local memory_mb = get_memory_usage()
         print(chat.header('Keyring'):append(chat.message('Current memory usage: ' .. memory_mb .. ' MB')))
         return true
     end
 
-    -- Notification toggle
+    -- ============================================================================
+    -- NOTIFICATION SYSTEM COMMANDS
+    -- ============================================================================
+    -- Toggle zone change notifications on/off
     if args[2] == 'notify' then
         notification_enabled = not notification_enabled
         print(chat.header('Keyring'):append(chat.message('Notifications ' .. (notification_enabled and 'enabled.' or 'disabled.'))))
         return true
     end
 
-    -- Check command
+    -- ============================================================================
+    -- ITEM STATUS COMMANDS
+    -- ============================================================================
+    -- Check current availability of all tracked key items
     if args[2] == 'check' then
         local availableItems = get_available_items()
         
@@ -264,7 +332,10 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Fix command - manually trigger acquisition for missed packets
+    -- ============================================================================
+    -- MANUAL ACQUISITION COMMANDS
+    -- ============================================================================
+    -- Manually trigger acquisition for missed packets or fix timestamp issues
     if args[2] == 'fix' then
         if not args[3] or args[3] == '' then
             print(chat.header('Keyring'):append(chat.message('Usage: /keyring fix <item>')))
@@ -318,7 +389,10 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Status command
+    -- ============================================================================
+    -- SYSTEM STATUS COMMANDS
+    -- ============================================================================
+    -- Display comprehensive addon status and system information
     if args[2] == 'status' then
         local dynamis_remaining = packet_tracker.get_dynamis_d_cooldown_remaining()
         local dynamis_available = packet_tracker.is_dynamis_d_available()
@@ -348,7 +422,10 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Manual hourglass command - set hourglass time for missed packets
+    -- ============================================================================
+    -- HOURGLASS TIME MANAGEMENT COMMANDS
+    -- ============================================================================
+    -- Manually set hourglass time for missed packets or testing purposes
     if args[2] == 'hourglass' then
         if not args[3] or args[3] == '' then
             print(chat.header('Keyring'):append(chat.message('Usage: /keyring hourglass <time_in_seconds>')))
@@ -380,7 +457,7 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Reset hourglass time command
+    -- Reset hourglass time to 0 (clears any stored time value)
     if args[2] == 'reset_hourglass' then
         local success = packet_tracker.reset_hourglass_time()
         if success then
@@ -391,7 +468,8 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Force update hourglass time command (bypasses packet validation)
+    -- Force hourglass time to specific value (bypasses packet validation)
+    -- Use this for testing or when packet data is corrupted
     if args[2] == 'force_hourglass' then
         if not args[3] or args[3] == '' then
             print(chat.header('Keyring'):append(chat.message('Usage: /keyring force_hourglass <time_in_seconds>')))
@@ -417,7 +495,10 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Set Dynamis [D] entry timestamp manually
+    -- ============================================================================
+    -- DYNAMIS [D] MANAGEMENT COMMANDS
+    -- ============================================================================
+    -- Manually set Dynamis [D] entry timestamp for missed packets or testing
     if args[2] == 'set_dynamis' then
         if not args[3] or args[3] == '' then
             print(chat.header('Keyring'):append(chat.message('Usage: /keyring set_dynamis <timestamp>')))
@@ -451,7 +532,10 @@ ashita.events.register('command', 'command_cb', function(e)
 
 
 
-    -- Debug item state command
+    -- ============================================================================
+    -- DEBUG ITEM COMMANDS
+    -- ============================================================================
+    -- Display detailed debug information for a specific item
     if args[2] == 'debug_item' then
         if not args[3] or args[3] == '' then
             print(chat.header('Keyring'):append(chat.message('Usage: /keyring debug_item <item>')))
@@ -495,35 +579,49 @@ ashita.events.register('command', 'command_cb', function(e)
         return true
     end
 
-    -- Manage command - open item management GUI
+    -- ============================================================================
+    -- GUI MANAGEMENT COMMANDS
+    -- ============================================================================
+    -- Open item management GUI for adding, editing, or removing tracked items
     if args[2] == 'manage' then
         print(chat.header('Keyring'):append(chat.message('Opening item management GUI. Use the GUI to add, edit, or remove tracked items.')))
         itemManagementGui.toggle()
         return true
     end
     
-    -- Add Item command - open item management GUI with add item dialog
+    -- Open item management GUI with Add Item dialog pre-selected
     if args[2] == 'additem' then
         print(chat.header('Keyring'):append(chat.message('Opening item management GUI with Add Item dialog.')))
         itemManagementGui.show_add_item_dialog()
         return true
     end
 
-    -- Unknown command
+
+
+    -- ============================================================================
+    -- ERROR HANDLING
+    -- ============================================================================
+    -- Unknown command - provide helpful error message
     print(chat.header('Keyring'):append(chat.message('Unknown command. Type /keyring help for available commands.')))
     return true
 end)
 
--- Load event
+-- ============================================================================
+-- ASHITA EVENT HANDLERS
+-- ============================================================================
+-- Addon load event - called when the addon is loaded or reloaded
 ashita.events.register('load', 'load_cb', function()
     print(chat.header('Keyring'):append(chat.message('Keyring v0.4.2 loaded. Key item state will be initialized when ready.')))
 end)
 
--- Main render loop
+-- ============================================================================
+-- MAIN RENDER LOOP
+-- ============================================================================
+-- Main render loop - called every frame for GUI updates and system maintenance
 ashita.events.register('d3d_present', 'render', function()
-    -- Wrap everything in pcall to prevent crashes
+    -- Wrap everything in pcall to prevent crashes and ensure stability
     local success, err = pcall(function()
-        -- Check for player ID and initialize if needed
+        -- Check for player ID and initialize packet tracking system if needed
         if not packet_tracker.is_initialized() then
             local mem = AshitaCore:GetMemoryManager()
             if mem then
@@ -531,7 +629,7 @@ ashita.events.register('d3d_present', 'render', function()
                 if party then
                     local player_id = party:GetMemberServerId(0)
                     if player_id and player_id > 0 then
-                        -- Throttle the player ID detection message
+                        -- Throttle the player ID detection message to prevent spam
                         local current_time = os.time()
                         if current_time - last_player_id_message >= player_id_message_interval then
                             print(chat.header('Keyring'):append(chat.message('Player ID detected: ' .. player_id .. ' - Initializing...')))
@@ -541,7 +639,7 @@ ashita.events.register('d3d_present', 'render', function()
                     end
                 end
             end
-            -- Still render GUI even during initialization (but with empty data)
+            -- Render GUI during initialization with empty data (shows loading state)
             local keyItemStatuses = {}
             gui.render(keyItemStatuses, trackedKeyItems, 0, packet_tracker)
             return
@@ -556,16 +654,23 @@ ashita.events.register('d3d_present', 'render', function()
     -- Continue with normal operation if initialization is complete
     if packet_tracker.is_initialized() then
         -- Use our custom timer system instead of manual time checks
+        -- This handles all cooldown and generation timers automatically
         packet_tracker.check_all_timers()
         
         -- Update storage canteens from the timer system
+        -- This keeps our local state synchronized with the packet handler
         storage_canteens = packet_tracker.get_storage_info().count
+        
+        -- Update Imprimatur count in GUI
+        local imprimatur_count = packet_tracker.get_imprimatur_count()
+        gui.set_imprimatur_count(imprimatur_count)
 
-        -- Render the GUI using the modularized GUI system
+        -- Render the main GUI using the modularized GUI system
+        -- Pass all necessary data for proper display
         local keyItemStatuses = packet_tracker.get_key_item_statuses()
         gui.render(keyItemStatuses, trackedKeyItems, storage_canteens, packet_tracker)
         
-        -- Render the item management GUI
+        -- Render the item management GUI (if it's open)
         itemManagementGui.render()
     end
 end)

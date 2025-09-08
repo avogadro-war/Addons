@@ -18,7 +18,7 @@ end
 local trackedKeyItems = {
     -- Items with cooldowns
     [3212] = { cooldown = 72000, name = "Moglophone" },  -- 20 hour cooldown
-    [3137] = { cooldown = 0, name = "Mystical Canteen" }, -- storage-based generation (no individual cooldown)
+    [3137] = { cooldown = 72000, name = "Mystical Canteen" }, -- 20 hour generation cycle
     [3300] = { cooldown = 72000, name = "shiny Ra'Kaznarian plate" }, -- 20 hour cooldown
     
     -- Items without cooldowns 

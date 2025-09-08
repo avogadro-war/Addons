@@ -11,6 +11,7 @@ local gui = {}
 
 -- GUI state
 local showGui = { false }
+local imprimatur_count = 0
 
 -- Dynamic window sizing constants
 local HEADER_HEIGHT = 30
@@ -48,6 +49,14 @@ function gui.set_visible(visible)
     showGui[1] = visible
 end
 
+function gui.set_imprimatur_count(count)
+    imprimatur_count = count
+end
+
+function gui.force_open()
+    showGui[1] = true
+end
+
 -- Cache for window dimensions to prevent unnecessary recalculations
 local window_dimension_cache = {}
 local last_dimension_update = 0
@@ -70,6 +79,9 @@ local function calculate_window_dimensions(keyItemStatuses, trackedKeyItems)
             itemCount = itemCount + 1
         end
     end
+    
+    -- Add 1 for the Imprimatur row
+    itemCount = itemCount + 1
     
     -- Calculate height for key items section
     local spacingCount = math.max(0, itemCount - 1)
@@ -865,6 +877,54 @@ function gui.render(keyItemStatuses, trackedKeyItems, storage_canteens, packet_t
         
         render_key_item_row(item, hasItem, storage_canteens, packet_tracker)
     end
+    
+    -- Render Imprimatur row using the same structure as other key items
+    local imprimatur_item = {
+        id = 9999,
+        name = 'Imprimaturs',
+        owned = true, -- Always "owned" since we have a count
+        remaining = nil,
+        timestamp = 0,
+        show_count = true
+    }
+    
+    -- Create a custom render function for Imprimaturs
+    local function render_imprimatur_row()
+        -- Key Item Name (left aligned)
+        imgui.Text(imprimatur_item.name)
+        imgui.NextColumn()
+
+        -- Have? (centered, colored) - show the count
+        local count = imprimatur_count or 0
+        local statusText = tostring(count)
+        local statusColor = {0, 1, 0, 1} -- Green since we always "have" Imprimaturs
+        
+        do
+            local col_start = imgui.GetColumnOffset()
+            local col_width = imgui.GetColumnWidth()
+            local text_width = imgui.CalcTextSize(statusText)
+            local pos_x = col_start + (col_width - text_width) / 2
+            imgui.SetCursorPosX(pos_x)
+            imgui.TextColored(statusColor, statusText)
+        end
+        imgui.NextColumn()
+
+        -- Time Remaining - show "-" for Imprimaturs
+        local displayText = '-'
+        local textColor = color_pool.gray
+        
+        do
+            local col_start = imgui.GetColumnOffset()
+            local col_width = imgui.GetColumnWidth()
+            local text_width = imgui.CalcTextSize(displayText)
+            local pos_x = col_start + (col_width - text_width) / 2
+            imgui.SetCursorPosX(pos_x)
+            imgui.TextColored(textColor, displayText)
+        end
+        imgui.NextColumn()
+    end
+    
+    render_imprimatur_row()
 
          imgui.Columns(1)
      
