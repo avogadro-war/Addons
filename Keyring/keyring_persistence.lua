@@ -31,6 +31,10 @@ local DEFAULTS = {
     packet_ruspix_time = 0,             -- Ruspix Plate timer from packet data
     storage_canteens = 0,               -- Count of canteens in storage
     timestamps = {},                    -- Table of item acquisition timestamps
+    -- Chain reaction management for canteen generation
+    canteen_chain_active = false,       -- Whether canteen chain reaction is active
+    canteen_chain_start_time = 0,       -- When the chain reaction started
+    canteen_chain_periods_completed = 0, -- How many 20-hour periods have been completed
 }
 
 -- ============================================================================
@@ -53,6 +57,10 @@ function persistence.load_state(debug_print)
     settings_tbl.hourglass_time = tonumber(settings_tbl.hourglass_time) or -1
     settings_tbl.packet_ruspix_time = tonumber(settings_tbl.packet_ruspix_time) or 0
     settings_tbl.storage_canteens = tonumber(settings_tbl.storage_canteens) or 0
+    -- Chain reaction management fields
+    settings_tbl.canteen_chain_active = settings_tbl.canteen_chain_active == true
+    settings_tbl.canteen_chain_start_time = tonumber(settings_tbl.canteen_chain_start_time) or 0
+    settings_tbl.canteen_chain_periods_completed = tonumber(settings_tbl.canteen_chain_periods_completed) or 0
 
     -- ============================================================================
     -- TABLE STRUCTURE VALIDATION
@@ -102,6 +110,9 @@ function persistence.save_state(state, debug_print)
     end
 
     -- Update the cached table with our state (in alphabetical order)
+    cached.canteen_chain_active = state.canteen_chain_active == true
+    cached.canteen_chain_periods_completed = tonumber(state.canteen_chain_periods_completed) or 0
+    cached.canteen_chain_start_time = tonumber(state.canteen_chain_start_time) or 0
     cached.dynamis_d_entry_time = tonumber(state.dynamis_d_entry_time) or 0
     cached.dynamis_projected_ready_time = tonumber(state.dynamis_projected_ready_time) or 0
     cached.hourglass_packet_timestamp = tonumber(state.hourglass_packet_timestamp) or 0
